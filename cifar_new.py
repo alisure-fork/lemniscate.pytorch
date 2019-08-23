@@ -1,6 +1,7 @@
 import math
 import torch
 import models
+import random
 from PIL import Image
 import torch.nn as nn
 import torch.optim as optim
@@ -128,10 +129,8 @@ class NCEAverageOp(Function):
         output_size = memory.size(0)
         input_size = memory.size(1)
 
-        # sample positives & negatives
-        idx.select(1, 0).copy_(y.data)
-        # sample correspoinding weights
-        weight = torch.index_select(memory, 0, idx.view(-1))
+        idx.select(1, 0).copy_(y.data)  # sample positives & negatives
+        weight = torch.index_select(memory, 0, idx.view(-1))  # sample corresponding weights
         weight.resize_(batch_size, m + 1, input_size)
 
         # inner product
@@ -139,10 +138,12 @@ class NCEAverageOp(Function):
         out.div_(t).exp_()  # batch_size * self.k+1
         x.data.resize_(batch_size, input_size)
 
+        z = -1
         if z < 0:
             params[2] = out.mean() * output_size
             z = params[2].item()
-            Tools.print("normalization constant Z is set to {:.1f}".format(z))
+            if random.randint(0, 20) == 0:
+                Tools.print("normalization constant Z is set to {:.1f}".format(z))
             pass
 
         out.div_(z).resize_(batch_size, m+ 1)
@@ -499,14 +500,18 @@ class NPIDRunner(object):
 
 
 if __name__ == '__main__':
-    _nce_m = 1
+    _nce_m = 4096
     _resume = False
-    runner = NPIDRunner(nce_m=_nce_m, checkpoint_path="./checkpoint/demo_nce_{}/ckpt.t7".format(_nce_m), resume=_resume)
+    runner = NPIDRunner(nce_m=_nce_m, resume=_resume,
+                        checkpoint_path="./checkpoint/demo_nce_{}_z/ckpt.t7".format(_nce_m))
+
+    Tools.print()
     acc = runner.test()
     Tools.print('now accuracy: {:.2f}'.format(acc * 100))
 
     runner.train(epoch_num=200)
 
+    Tools.print()
     acc = runner.test()
     Tools.print('final accuracy: {:.2f}'.format(acc * 100))
     pass
