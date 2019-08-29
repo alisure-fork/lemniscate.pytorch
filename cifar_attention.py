@@ -169,7 +169,6 @@ class KNN(object):
         train_features = nearest_attention.memory.t()
         train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
         c = train_labels.max() + 1
-        test_size = test_loader.dataset.__len__()
 
         if recompute_memory:
             transform_bak = train_loader.dataset.transform
@@ -195,6 +194,7 @@ class KNN(object):
                 top5 = 0.
                 total = 0
 
+                smaple_number = loader.dataset.__len__()
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
                     feature_final, _ = net(inputs)
@@ -225,7 +225,7 @@ class KNN(object):
 
                     if batch_idx % 50 == 0:
                         Tools.print('Test {} [{}/{}] Top1: {:.2f}  Top5: {:.2f}'.format(
-                            epoch, total, test_size, top1 * 100. / total, top5 * 100. / total))
+                            epoch, total, smaple_number, top1 * 100. / total, top5 * 100. / total))
                     pass
 
                 Tools.print("Test {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total, top5 * 100. / total))
@@ -351,7 +351,7 @@ class AttentionRunner(object):
 
     def _build_model(self):
         Tools.print('==> Building model..')
-        net = models.__dict__['AttentionResNet18'](low_dim=128)
+        net = models.__dict__['AttentionResNet18'](low_dim=128, has_l2norm=True)
 
         if self.device == 'cuda':
             net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
@@ -368,9 +368,6 @@ class AttentionRunner(object):
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
             checkpoint = torch.load(self.pre_train)
             net.load_state_dict(checkpoint['net'])
-            if "nearest_attention" in checkpoint.keys():
-                Tools.print('==> Pre train load nearest_attention')
-                nearest_attention = checkpoint['nearest_attention']
             pass
 
         # Load checkpoint.
@@ -380,9 +377,6 @@ class AttentionRunner(object):
             net.load_state_dict(checkpoint['net'])
             self.best_acc = checkpoint['acc']
             self.start_epoch = checkpoint['epoch']
-            if "nearest_attention" in checkpoint.keys():
-                Tools.print('==> Resuming load nearest_attention')
-                nearest_attention = checkpoint['nearest_attention']
             Tools.print("{} {}".format(self.best_acc, self.start_epoch))
             pass
 
@@ -470,7 +464,6 @@ class AttentionRunner(object):
                     'net': self.net.state_dict(),
                     'acc': _acc,
                     'epoch': epoch,
-                    # 'nearest_attention': self.nearest_attention,
                 }
                 torch.save(state, self.checkpoint_path)
                 self.best_acc = _acc
@@ -483,18 +476,23 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+    """
+    out_layer4 = self.l2norm(out)
+    Top 1: 80.27
+    """
 
     _k_nearest = 25
 
     pre_train = None
     # pre_train = "./checkpoint/attention_resume/ckpt.t7"
-    runner = AttentionRunner(k_nearest=_k_nearest, resume=False, pre_train=pre_train,
-                             checkpoint_path="./checkpoint/attention_test_2/ckpt.t7")
+    runner = AttentionRunner(k_nearest=_k_nearest, resume=True, pre_train=pre_train,
+                             checkpoint_path="./checkpoint/attention_l2norm/ckpt.t7")
 
     Tools.print()
     acc = runner.test()
-    Tools.print('random accuracy: {:.2f}'.format(acc * 100))
+    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
 
     # init memory
     Tools.print()

@@ -75,7 +75,7 @@ class AttentionBottleneck(nn.Module):
 
 class AttentionResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=128):
+    def __init__(self, block, num_blocks, low_dim=128, has_l2norm=False):
         super(AttentionResNet, self).__init__()
         self.in_planes = 64
 
@@ -92,6 +92,7 @@ class AttentionResNet(nn.Module):
         self.pam_size_one = 8 * 8 * 256
         self.cam_size = (low_dim,)
         self.cam_size_one = low_dim
+        self.has_l2norm = has_l2norm
         pass
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -111,8 +112,8 @@ class AttentionResNet(nn.Module):
         out = self.layer3(out)
         out_layer3 = out.view(out.size(0), -1)
         out = self.layer4(out)
-        out_layer4 = out.view(out.size(0), -1)
-        out_layer4 = self.l2norm(out_layer4)
+        out_layer4 = self.l2norm(out) if self.has_l2norm else out
+        out_layer4 = out_layer4.view(out_layer4.size(0), -1)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
@@ -124,24 +125,24 @@ class AttentionResNet(nn.Module):
     pass
 
 
-def AttentionResNet18(low_dim=128):
-    return AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], low_dim)
+def AttentionResNet18(low_dim=128, has_l2norm=False):
+    return AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], low_dim, has_l2norm)
 
 
-def AttentionResNet34(low_dim=128):
-    return AttentionResNet(AttentionBasicBlock, [3, 4, 6, 3], low_dim)
+def AttentionResNet34(low_dim=128, has_l2norm=False):
+    return AttentionResNet(AttentionBasicBlock, [3, 4, 6, 3], low_dim, has_l2norm)
 
 
-def AttentionResNet50(low_dim=128):
-    return AttentionResNet(AttentionBottleneck, [3, 4, 6, 3], low_dim)
+def AttentionResNet50(low_dim=128, has_l2norm=False):
+    return AttentionResNet(AttentionBottleneck, [3, 4, 6, 3], low_dim, has_l2norm)
 
 
-def AttentionResNet101(low_dim=128):
-    return AttentionResNet(AttentionBottleneck, [3, 4, 23, 3], low_dim)
+def AttentionResNet101(low_dim=128, has_l2norm=False):
+    return AttentionResNet(AttentionBottleneck, [3, 4, 23, 3], low_dim, has_l2norm)
 
 
-def AttentionResNet152(low_dim=128):
-    return AttentionResNet(AttentionBottleneck, [3, 8, 36, 3], low_dim)
+def AttentionResNet152(low_dim=128, has_l2norm=False):
+    return AttentionResNet(AttentionBottleneck, [3, 8, 36, 3], low_dim, has_l2norm)
 
 
 def test():
