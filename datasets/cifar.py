@@ -3,9 +3,11 @@ from PIL import Image
 import torchvision.datasets as datasets
 import torch.utils.data as data
 
+
 class CIFAR10Instance(datasets.CIFAR10):
     """CIFAR10Instance Dataset.
     """
+
     def __getitem__(self, index):
         if self.train:
             img, target = self.train_data[index], self.train_labels[index]
@@ -23,6 +25,7 @@ class CIFAR10Instance(datasets.CIFAR10):
             target = self.target_transform(target)
 
         return img, target, index
+
 
 class CIFAR100Instance(CIFAR10Instance):
     """CIFAR100Instance Dataset.
