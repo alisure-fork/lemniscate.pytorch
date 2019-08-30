@@ -102,18 +102,20 @@ class NearestAttention(nn.Module):
 
         std_final = 1. / math.sqrt(self.final_size / 2)
         self.register_buffer('params', torch.tensor([self.t, self.momentum]))
-        self.register_buffer('memory', torch.rand(self.n_sample,
-                                                  self.final_size).mul_(2 * std_final).add_(-std_final))
+        self.register_buffer('memory', torch.rand(self.n_sample, self.final_size).mul_(2 * std_final).add_(-std_final))
         pass
 
     def forward(self, final_features, indexes):
+        # k_nearest_indexes
+        k_invert_pam_features = self._get_k_nearest(final_features.data, self.k_nearest)
+
         # update features
         self.update_features(final_features, indexes)
 
         # no parametric instance discrimination
         linear_average_out = LinearNPIDOp.apply(final_features, indexes, self.memory, self.params)
 
-        return linear_average_out
+        return k_invert_pam_features, linear_average_out
 
     def update_features(self, final_features, indexes):
         # update final
@@ -129,6 +131,17 @@ class NearestAttention(nn.Module):
         # init final memory
         self.memory.index_copy_(0, indexes, final_features.data)
         pass
+
+    def _get_k_nearest(self, final_features, k_nearest):
+        # dist
+        dist = torch.mm(final_features, self.memory.t())
+
+        # K invert
+        _, k_invert_indexes = dist.topk(k_nearest, dim=1, largest=False, sorted=True)
+        k_invert_features = self.memory.index_select(
+            0, k_invert_indexes.data.view(-1)).resize_(final_features.size(0), self.k_nearest, self.final_size)
+
+        return k_invert_features
 
     pass
 
@@ -214,14 +227,18 @@ class KNN(object):
 
 class AttentionLoss(nn.Module):
 
-    def __init__(self):
+    def __init__(self, k_nearest):
         super(AttentionLoss, self).__init__()
+        self.k_nearest = k_nearest
         self.criterion_no = nn.CrossEntropyLoss()
+        self.criterion = nn.CosineSimilarity()
         pass
 
-    def forward(self, linear_average_out, indexes):
+    def forward(self, final_features, final_features_invert, linear_average_out, indexes):
         loss_1 = self.criterion_no(linear_average_out, indexes)
-        return loss_1
+        loss_2 = (1 - self.criterion(final_features, final_features_invert)).sum()
+        # return loss_1 + loss_2, loss_1, loss_2
+        return loss_2, loss_1, loss_2
 
     pass
 
@@ -288,7 +305,7 @@ class AttentionRunner(object):
 
     def _build_model(self):
         Tools.print('==> Building model..')
-        net = models.__dict__['AttentionResNet18'](low_dim=128, has_l2norm=True)
+        net = models.__dict__['AttentionResNet18'](low_dim=128)
 
         if self.device == 'cuda':
             net = torch.nn.DataParallel(net, device_ids=range(torch.cuda.device_count()))
@@ -297,7 +314,7 @@ class AttentionRunner(object):
 
         nearest_attention = NearestAttention(self.train_num, self.k_nearest, net.module.cam_size_one, self.momentum)
 
-        criterion = AttentionLoss()  # define loss function
+        criterion = AttentionLoss(self.k_nearest)  # define loss function
 
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
@@ -351,16 +368,22 @@ class AttentionRunner(object):
         self._adjust_learning_rate(epoch, max_epoch)
 
         avg_loss = AverageMeter()
+        avg_loss_1 = AverageMeter()
+        avg_loss_2 = AverageMeter()
         for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
             inputs, indexes = inputs.to(self.device), indexes.to(self.device)
             self.optimizer.zero_grad()
 
             feature_final, features = self.net(inputs)
 
-            linear_average_out = self.nearest_attention(feature_final, indexes)
+            feature_final_invert, linear_average_out = self.nearest_attention(feature_final, indexes)
+            feature_final_invert = -feature_final_invert.mean(dim=1)
+            feature_final_invert = feature_final_invert.div(feature_final_invert.pow(2).sum(1, keepdim=True).pow(0.5))
 
-            loss = self.criterion(linear_average_out, indexes)
+            loss, loss_1, loss_2 = self.criterion(feature_final, feature_final_invert, linear_average_out, indexes)
             avg_loss.update(loss.item(), inputs.size(0))
+            avg_loss_1.update(loss_1.item(), inputs.size(0))
+            avg_loss_2.update(loss_2.item(), inputs.size(0))
 
             loss.backward()
 
@@ -369,8 +392,11 @@ class AttentionRunner(object):
             if batch_idx % 50 == 0:
                 Tools.print(
                     'Epoch: [{}][{}/{}] '
-                    'Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
-                        epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss))
+                    'Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f}) '
+                    'Loss 1: {avg_loss_1.val:.4f} ({avg_loss_1.avg:.4f}) '
+                    'Loss 2: {avg_loss_2.val:.4f} ({avg_loss_2.avg:.4f})'.format(
+                        epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss,
+                        avg_loss_1=avg_loss_1, avg_loss_2=avg_loss_2))
                 pass
 
             pass
@@ -400,7 +426,7 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     Top 1: 
@@ -411,20 +437,20 @@ if __name__ == '__main__':
     pre_train = None
     # pre_train = "./checkpoint/attention_resume/ckpt.t7"
     runner = AttentionRunner(k_nearest=_k_nearest, resume=False, pre_train=pre_train,
-                             checkpoint_path="./checkpoint/attention_single/ckpt.t7")
+                             checkpoint_path="./checkpoint/attention_single_invert/ckpt.t7")
 
-    Tools.print()
-    acc = runner.test()
-    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
-
+    # Tools.print()
+    # acc = runner.test()
+    # Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
+    #
     # init memory
     Tools.print()
     Tools.print("Init memory")
     runner.init_memory()
-
-    Tools.print()
-    acc = runner.test(recompute_memory=0)
-    Tools.print('Init accuracy: {:.2f}'.format(acc * 100))
+    #
+    # Tools.print()
+    # acc = runner.test(recompute_memory=0)
+    # Tools.print('Init accuracy: {:.2f}'.format(acc * 100))
 
     runner.train(epoch_num=300)
 
