@@ -67,7 +67,7 @@ class AttentionResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.linear_256 = nn.Linear(512 * block.expansion, low_dim)
-        self.softmax = nn.Softmax(dim=-1)
+        self.l2norm = Normalize(2)
         pass
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -87,8 +87,8 @@ class AttentionResNet(nn.Module):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out_logits = self.linear_256(out)
-        out_softmax = self.softmax(out_logits)
-        return out_logits, out_softmax
+        out_l2norm = self.l2norm(out_logits)
+        return out_logits, out_l2norm
 
     pass
 
@@ -184,9 +184,9 @@ class KNN(object):
             train_loader.dataset.transform = test_loader.dataset.transform
             temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
             for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-                out_logits, out = net(inputs)
+                out_logits, out_l2norm = net(inputs)
                 batch_size = inputs.size(0)
-                out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out.data.t()
+                out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
                 pass
 
             train_loader.dataset.transform = transform_bak
@@ -205,8 +205,8 @@ class KNN(object):
                 retrieval_one_hot = torch.zeros(k, c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
-                    out_logits, out = net(inputs)
-                    dist = torch.mm(out, out_memory)
+                    out_logits, out_l2norm = net(inputs)
+                    dist = torch.mm(out_l2norm, out_memory)
 
                     # ---------------------------------------------------------------------------------- #
                     batch_size = inputs.size(0)
@@ -229,10 +229,6 @@ class KNN(object):
                     top5 += correct.narrow(1, 0, 5).sum().item()
 
                     total += targets.size(0)
-
-                    if batch_idx % 100 == 0:
-                        Tools.print('Test {} [{}/{}] Top1: {:.2f}  Top5: {:.2f}'.format(
-                            epoch, total, sample_number, top1 * 100. / total, top5 * 100. / total))
                     pass
 
                 Tools.print("Test {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total, top5 * 100. / total))
@@ -267,7 +263,7 @@ class ProduceClass(nn.Module):
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
-        self.class_per_num = self.n_sample // self.low_dim
+        self.class_per_num = self.n_sample // self.low_dim * 2
         self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
         self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
@@ -276,10 +272,9 @@ class ProduceClass(nn.Module):
         pass
 
     def update_label(self, out, indexes):
-        old_features = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
-        old_features.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
-        updated_weight = old_features
-
+        updated_weight = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
+        updated_weight.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
+        updated_weight.div(updated_weight.pow(2).sum(1, keepdim=True).pow(0.5))
         top_k = updated_weight.topk(self.low_dim, dim=1)[1]
 
         top_k = top_k.cpu()
@@ -386,14 +381,9 @@ class AttentionRunner(object):
             Tools.print("Update label {} .......".format(epoch))
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
-                out_logits, out = self.net(inputs)
-                classes = self.produce_class(out, indexes, True, True if batch_idx == 0 else False)
-                if batch_idx % 100 == 0:
-                    Tools.print('Epoch: [{}][{}/{}] {})'.format(epoch, batch_idx, len(self.train_loader),
-                                                                [int(_) for _ in classes]))
-                    pass
+                out_logits, out_l2norm = self.net(inputs)
+                self.produce_class(out_l2norm, indexes, True, True if batch_idx == 0 else False)
                 pass
-
             Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
 
             Tools.print()
@@ -419,21 +409,16 @@ class AttentionRunner(object):
             inputs, indexes = inputs.cuda(), indexes.cuda()
             self.optimizer.zero_grad()
 
-            out_logits, out = self.net(inputs)
-            targets = self.produce_class(out, indexes)
+            out_logits, out_l2norm = self.net(inputs)
+            targets = self.produce_class(out_l2norm, indexes)
 
             loss = self.criterion(out_logits, targets)
             avg_loss.update(loss.item(), inputs.size(0))
             loss.backward()
             self.optimizer.step()
-
-            if batch_idx % 100 == 0:
-                Tools.print('Epoch: [{}][{}/{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
-                        epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss))
-                pass
-
             pass
-
+        Tools.print('Epoch: [{}][{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
+            epoch, len(self.train_loader), avg_loss=avg_loss))
         pass
 
     def train(self, epoch_num=200, update_epoch=3):
@@ -449,12 +434,12 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    Top 1: 512:75|71, 256:74|71|70(less)
-          1024:71.98, 71.37
+    Top 1:  256(74.91, 300, 2)
+           1024(75.50, 300, 2)
     """
 
-    _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _low_dim = 1024
+    _name = "8_class_{}_norm".format(_low_dim)
 
     _momentum = 0.5
     _pre_train = None

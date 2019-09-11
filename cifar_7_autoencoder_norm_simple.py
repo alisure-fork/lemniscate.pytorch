@@ -59,24 +59,18 @@ class AttentionResNet(nn.Module):
     def __init__(self, block, num_blocks, low_dim=128):
         super(AttentionResNet, self).__init__()
         self.in_planes = 64
-
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear_256 = nn.Linear(512 * block.expansion, low_dim)
-        self.softmax = nn.Softmax(dim=-1)
-        pass
 
-    def _make_layer(self, block, planes, num_blocks, stride):
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride))
-            self.in_planes = planes * block.expansion
-        return nn.Sequential(*layers)
+        self.linear = nn.Linear(512 * block.expansion, low_dim)
+        self.l2norm = Normalize(2)
+
+        self.decoder = self._decoder(low_dim)
+        pass
 
     def forward(self, x):
         out = F.relu(self.bn1(self.conv1(x)))
@@ -86,9 +80,34 @@ class AttentionResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_256(out)
-        out_softmax = self.softmax(out_logits)
-        return out_logits, out_softmax
+        out_logits = self.linear(out)
+        out_l2norm = self.l2norm(out_logits)
+        out_decoded = self.decoder(out_logits.view(out_logits.size(0), -1, 1, 1))
+        return out_logits, out_l2norm, out_decoded
+
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*layers)
+
+    @staticmethod
+    def _decoder(low_dim):
+        decoder = nn.Sequential(
+            nn.ConvTranspose2d(low_dim, 512, 4, stride=2, padding=1),  # [batch, 512, 2, 2]
+            nn.ReLU(),
+            nn.ConvTranspose2d(512, 256, 4, stride=2, padding=1),  # [batch, 256, 4, 4]
+            nn.ReLU(),
+            nn.ConvTranspose2d(256, 128, 4, stride=2, padding=1),  # [batch, 128, 8, 8]
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),  # [batch, 64, 16, 16]
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 3, 4, stride=2, padding=1),  # [batch, 3, 32, 32]
+            nn.Sigmoid(),
+        )
+        return decoder
 
     pass
 
@@ -147,12 +166,12 @@ class CIFAR10Instance(datasets.CIFAR10):
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
 
         transform_test = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            # transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
 
         train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
@@ -184,9 +203,9 @@ class KNN(object):
             train_loader.dataset.transform = test_loader.dataset.transform
             temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
             for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-                out_logits, out = net(inputs)
+                out_logits, out_l2norm, out_decoded = net(inputs)
                 batch_size = inputs.size(0)
-                out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out.data.t()
+                out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
                 pass
 
             train_loader.dataset.transform = transform_bak
@@ -205,8 +224,8 @@ class KNN(object):
                 retrieval_one_hot = torch.zeros(k, c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
-                    out_logits, out = net(inputs)
-                    dist = torch.mm(out, out_memory)
+                    out_logits, out_l2norm, out_decoded = net(inputs)
+                    dist = torch.mm(out_l2norm, out_memory)
 
                     # ---------------------------------------------------------------------------------- #
                     batch_size = inputs.size(0)
@@ -233,6 +252,68 @@ class KNN(object):
                     if batch_idx % 100 == 0:
                         Tools.print('Test {} [{}/{}] Top1: {:.2f}  Top5: {:.2f}'.format(
                             epoch, total, sample_number, top1 * 100. / total, top5 * 100. / total))
+                    pass
+
+                Tools.print("Test {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total, top5 * 100. / total))
+                all_acc.append(top1 / total)
+
+                pass
+            pass
+
+        return all_acc[0]
+
+    @staticmethod
+    def knn2(epoch, net, train_loader, test_loader, k, t=0.1, low_dim=128, loader_n=1):
+        net.eval()
+
+        sample_number = train_loader.dataset.__len__()
+        out_memory = torch.rand(sample_number, low_dim).cuda().t()
+        train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
+        c = train_labels.max() + 1
+
+        transform_bak = train_loader.dataset.transform
+        train_loader.dataset.transform = test_loader.dataset.transform
+        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
+        for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
+            inputs = inputs.cuda()
+            out_logits, out_l2norm, out_decoded = net(inputs)
+            batch_size = inputs.size(0)
+            out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
+            pass
+        train_loader.dataset.transform = transform_bak
+
+        all_acc = []
+        with torch.no_grad():
+            now_loader = [test_loader] if loader_n == 1 else [test_loader, train_loader]
+
+            for loader in now_loader:
+                top1, top5, total = 0., 0., 0
+                retrieval_one_hot = torch.zeros(k, c).cuda()  # [200, 10]
+                for batch_idx, (inputs, targets, indexes) in enumerate(loader):
+                    inputs = inputs.cuda()
+                    targets = targets.cuda()
+                    out_logits, out_l2norm, out_decoded = net(inputs)
+                    dist = torch.mm(out_l2norm, out_memory)
+
+                    # ---------------------------------------------------------------------------------- #
+                    batch_size = inputs.size(0)
+                    yd, yi = dist.topk(k, dim=1, largest=True, sorted=True)
+                    candidates = train_labels.view(1, -1).expand(batch_size, -1)
+                    retrieval = torch.gather(candidates, 1, yi)
+
+                    retrieval_one_hot.resize_(batch_size * k, c).zero_()
+                    retrieval_one_hot = retrieval_one_hot.scatter_(1, retrieval.view(-1, 1), 1).view(batch_size, -1, c)
+                    yd_transform = yd.clone().div_(t).exp_().view(batch_size, -1, 1)
+                    probs = torch.sum(torch.mul(retrieval_one_hot, yd_transform), 1)
+                    _, predictions = probs.sort(1, True)
+                    # ---------------------------------------------------------------------------------- #
+
+                    correct = predictions.eq(targets.data.view(-1, 1))
+
+                    top1 += correct.narrow(1, 0, 1).sum().item()
+                    top5 += correct.narrow(1, 0, 5).sum().item()
+
+                    total += targets.size(0)
                     pass
 
                 Tools.print("Test {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total, top5 * 100. / total))
@@ -276,9 +357,9 @@ class ProduceClass(nn.Module):
         pass
 
     def update_label(self, out, indexes):
-        old_features = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
-        old_features.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
-        updated_weight = old_features
+        updated_weight = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
+        updated_weight.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
+        updated_weight.div(updated_weight.pow(2).sum(1, keepdim=True).pow(0.5))
 
         top_k = updated_weight.topk(self.low_dim, dim=1)[1]
 
@@ -342,6 +423,7 @@ class AttentionRunner(object):
 
         self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim).cuda()
         self.criterion = AttentionLoss().cuda()  # define loss function
+        self.criterion_BCELoss = nn.BCELoss()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
 
@@ -373,45 +455,25 @@ class AttentionRunner(object):
         pass
 
     def test(self, epoch=0, t=0.1, recompute_memory=1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.produce_class, self.train_loader, self.test_loader,
-                       200, t, recompute_memory, loader_n=loader_n)
+        # _acc = KNN.knn(epoch, self.net, self.produce_class, self.train_loader, self.test_loader,
+        #                200, t, recompute_memory, loader_n=loader_n)
+        _acc = KNN.knn2(epoch, self.net, self.train_loader, self.test_loader,
+                        200, t, self.low_dim, loader_n=loader_n)
         return _acc
 
-    def _train_one_epoch(self, epoch, max_epoch, update_epoch=3):
+    def _train_auto_encoder(self, epoch, max_epoch, update_epoch=1):
 
         # Update and Test
         if epoch % update_epoch == 0:
             self.net.eval()
             Tools.print()
-            Tools.print("Update label {} .......".format(epoch))
-            for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
-                inputs, indexes = inputs.cuda(), indexes.cuda()
-                out_logits, out = self.net(inputs)
-                classes = self.produce_class(out, indexes, True, True if batch_idx == 0 else False)
-                if batch_idx % 100 == 0:
-                    Tools.print('Epoch: [{}][{}/{}] {})'.format(epoch, batch_idx, len(self.train_loader),
-                                                                [int(_) for _ in classes]))
-                    pass
-                pass
-
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
-
-            Tools.print()
-            Tools.print("Test {} .......".format(epoch))
+            Tools.print("Test auto encoder {} .......".format(epoch))
             _acc = self.test(epoch=epoch, recompute_memory=0)
-            if _acc > self.best_acc:
-                Tools.print()
-                Tools.print('Saving..')
-                state = {'net': self.net.state_dict(), 'acc': _acc, 'epoch': epoch}
-                torch.save(state, self.checkpoint_path)
-                self.best_acc = _acc
-                pass
-            Tools.print('best accuracy: {:.2f}'.format(self.best_acc * 100))
             pass
 
         # Train
         Tools.print()
-        Tools.print('Epoch: %d' % epoch)
+        Tools.print('Epoch: auto encoder %d' % epoch)
         self.net.train()
         self._adjust_learning_rate(epoch, max_epoch)
         avg_loss = AverageMeter()
@@ -419,26 +481,20 @@ class AttentionRunner(object):
             inputs, indexes = inputs.cuda(), indexes.cuda()
             self.optimizer.zero_grad()
 
-            out_logits, out = self.net(inputs)
-            targets = self.produce_class(out, indexes)
+            out_logits, out_l2norm, out_decoded = self.net(inputs)
 
-            loss = self.criterion(out_logits, targets)
+            loss = self.criterion_BCELoss(out_decoded, inputs)
             avg_loss.update(loss.item(), inputs.size(0))
             loss.backward()
             self.optimizer.step()
-
-            if batch_idx % 100 == 0:
-                Tools.print('Epoch: [{}][{}/{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
-                        epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss))
-                pass
-
             pass
-
+        Tools.print('Epoch: auto encoder [{}/{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
+            epoch, len(self.train_loader), avg_loss=avg_loss))
         pass
 
-    def train(self, epoch_num=200, update_epoch=3):
-        for epoch in range(self.start_epoch, self.start_epoch + epoch_num):
-            self._train_one_epoch(epoch, max_epoch=self.start_epoch + epoch_num, update_epoch=update_epoch)
+    def train(self, epoch_1=5):
+        for epoch in range(epoch_1):
+            self._train_auto_encoder(epoch, max_epoch=epoch_1)
             pass
         pass
 
@@ -449,12 +505,11 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    Top 1: 512:75|71, 256:74|71|70(less)
-          1024:71.98, 71.37
+    Top 1: 
     """
 
     _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _name = "7_auto_encoder_{}".format(_low_dim)
 
     _momentum = 0.5
     _pre_train = None
@@ -473,7 +528,7 @@ if __name__ == '__main__':
     acc = runner.test()
     Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
 
-    runner.train(epoch_num=300, update_epoch=1)
+    runner.train(epoch_1=6)
 
     Tools.print()
     acc = runner.test(loader_n=2)

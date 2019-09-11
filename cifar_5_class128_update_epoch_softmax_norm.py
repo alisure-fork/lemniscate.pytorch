@@ -68,6 +68,7 @@ class AttentionResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.linear_256 = nn.Linear(512 * block.expansion, low_dim)
         self.softmax = nn.Softmax(dim=-1)
+        self.l2norm = Normalize(2)
         pass
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -86,7 +87,8 @@ class AttentionResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_256(out)
+        out = self.linear_256(out)
+        out_logits = self.l2norm(out)
         out_softmax = self.softmax(out_logits)
         return out_logits, out_softmax
 
@@ -267,7 +269,7 @@ class ProduceClass(nn.Module):
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
-        self.class_per_num = self.n_sample // self.low_dim
+        self.class_per_num = self.n_sample // self.low_dim * 2
         self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
         self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
@@ -393,7 +395,6 @@ class AttentionRunner(object):
                                                                 [int(_) for _ in classes]))
                     pass
                 pass
-
             Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
 
             Tools.print()
@@ -446,19 +447,19 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    Top 1: 512:75|71, 256:74|71|70(less)
-          1024:71.98, 71.37
+    Top 1: 256: 66.00(momentum)|67.88(no momentum)|67.51(less)
+          1024: 73.62
     """
 
-    _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _low_dim = 1024
+    _name = "5_class_{}_softmax_norm".format(_low_dim)
 
     _momentum = 0.5
-    _pre_train = None
-    # _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
+    # _pre_train = None
+    _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
@@ -466,7 +467,7 @@ if __name__ == '__main__':
         _low_dim, _name, _pre_train, _momentum, _checkpoint_path))
     Tools.print()
 
-    runner = AttentionRunner(low_dim=_low_dim, learning_rate=0.03, momentum=_momentum, resume=False,
+    runner = AttentionRunner(low_dim=_low_dim, momentum=_momentum, resume=False,
                              pre_train=_pre_train, checkpoint_path=_checkpoint_path)
 
     Tools.print()

@@ -262,56 +262,75 @@ class AttentionLoss(nn.Module):
 
 class ProduceClass(nn.Module):
 
-    def __init__(self, n_sample, low_dim, momentum=0.5):
+    def __init__(self, n_sample, low_dim, momentum=0.5, candidate=8):
         super(ProduceClass, self).__init__()
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
+        self.candidate = candidate
         self.class_per_num = self.n_sample // self.low_dim
         self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
         self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
+        self.register_buffer('classes_candidate', (torch.rand(self.n_sample, self.candidate) * self.low_dim).long())
         self.register_buffer('class_num', torch.zeros(self.low_dim).long())
         self.register_buffer('memory', torch.rand(self.n_sample, self.low_dim))
         pass
 
-    def update_label(self, out, indexes):
-        old_features = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
-        old_features.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
-        updated_weight = old_features
-
-        top_k = updated_weight.topk(self.low_dim, dim=1)[1]
+    def update_label(self, out, indexes, is_first):
+        features = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
+        features.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
+        top_k = features.topk(self.low_dim, dim=1)[1]
 
         top_k = top_k.cpu()
         batch_size = out.size(0)
         class_num = self.class_num.cpu()
         new_class_num = np.zeros(shape=(batch_size, self.low_dim), dtype=np.int)
         class_labels = np.zeros(shape=(batch_size,), dtype=np.int)
+        _class_labels_candidate = self.classes_candidate[indexes].cpu()
+        _class_labels_old = self.classes[indexes].cpu()
+
+        count = 0
         for i in range(batch_size):
-            for j in top_k[i]:
-                if self.class_per_num > class_num[j]:
-                    class_labels[i] += j
-                    new_class_num[i][j] += 1
-                    break
+            if is_first:
+                for j in top_k[i]:
+                    if self.class_per_num > class_num[j]:
+                        class_labels[i] = j
+                        new_class_num[i][class_labels[i]] += 1
+                        count += 1
+                        break
+                    pass
                 pass
+            else:
+                _j = _class_labels_old[i]
+                for j in top_k[i][: self.candidate]:
+                    if j in _class_labels_candidate[i] and self.class_per_num > class_num[j]:
+                        _j = j
+                        count += 1
+                        break
+                    pass
+                class_labels[i] = _j
+                new_class_num[i][class_labels[i]] += 1
             pass
         new_class_num = torch.tensor(new_class_num).long().cuda()
-        self.class_num.index_copy_(0, self.classes_index, self.class_num + new_class_num.sum(0))
+        class_labels_candidate = top_k[:, :self.candidate].cuda()
+        class_labels = torch.tensor(class_labels).long().cuda()
 
         # update
-        class_labels = torch.tensor(class_labels).long().cuda()
         self.classes.index_copy_(0, indexes, class_labels)
-        self.memory.index_copy_(0, indexes, updated_weight)
-        return class_labels
+        self.classes_candidate.index_copy_(0, indexes, class_labels_candidate)
+        self.class_num.index_copy_(0, self.classes_index, self.class_num + new_class_num.sum(0))
+        self.memory.index_copy_(0, indexes, features)
+        return class_labels, count
 
-    def forward(self, out, indexes, is_update=False, is_reset=False):
+    def forward(self, out, indexes, is_update=False, is_reset=False, is_first=False):
         if is_update:
             if is_reset:
                 self.class_num.index_copy_(0, self.classes_index, torch.zeros(self.low_dim).long().cuda())
-            classes = self.update_label(out, indexes)
+            return self.update_label(out, indexes, is_first)
         else:
-            classes = self.classes.index_select(0, indexes.data.view(-1)).resize_as_(indexes)
-        return classes
+            return self.classes.index_select(0, indexes.data.view(-1)).resize_as_(indexes)
+        pass
 
     pass
 
@@ -384,17 +403,22 @@ class AttentionRunner(object):
             self.net.eval()
             Tools.print()
             Tools.print("Update label {} .......".format(epoch))
+            count_all = 0
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 out_logits, out = self.net(inputs)
-                classes = self.produce_class(out, indexes, True, True if batch_idx == 0 else False)
+                classes, count = self.produce_class(out, indexes, True,
+                                                    True if batch_idx == 0 else False,
+                                                    True if epoch == 0 else False)
+                count_all += count
                 if batch_idx % 100 == 0:
-                    Tools.print('Epoch: [{}][{}/{}] {})'.format(epoch, batch_idx, len(self.train_loader),
-                                                                [int(_) for _ in classes]))
+                    Tools.print('Epoch: [{}][{}/{}] update={} - {})'.format(epoch, batch_idx, len(self.train_loader),
+                                                                            count_all, [int(_) for _ in classes]))
                     pass
                 pass
 
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
+            Tools.print("Epoch: [{}] update={} {}".format(epoch, count_all,
+                                                          [int(_) for _ in self.produce_class.class_num]))
 
             Tools.print()
             Tools.print("Test {} .......".format(epoch))
@@ -446,15 +470,14 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    Top 1: 512:75|71, 256:74|71|70(less)
-          1024:71.98, 71.37
+    Top 1: 
     """
 
     _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _name = "5_class_{}_softmax_candidate".format(_low_dim)
 
     _momentum = 0.5
     _pre_train = None

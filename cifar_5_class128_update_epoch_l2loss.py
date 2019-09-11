@@ -250,7 +250,7 @@ class AttentionLoss(nn.Module):
 
     def __init__(self):
         super(AttentionLoss, self).__init__()
-        self.criterion_no = nn.CrossEntropyLoss()
+        self.criterion_no = nn.MSELoss()
         pass
 
     def forward(self, out, targets):
@@ -267,7 +267,7 @@ class ProduceClass(nn.Module):
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
-        self.class_per_num = self.n_sample // self.low_dim
+        self.class_per_num = self.n_sample // self.low_dim * 2
         self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
         self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
@@ -421,8 +421,10 @@ class AttentionRunner(object):
 
             out_logits, out = self.net(inputs)
             targets = self.produce_class(out, indexes)
+            targets_one_hot = torch.zeros(
+                targets.size()[0], self.low_dim).cuda().scatter_(1, targets.view(-1, 1), 1)
 
-            loss = self.criterion(out_logits, targets)
+            loss = self.criterion(out_logits, targets_one_hot)
             avg_loss.update(loss.item(), inputs.size(0))
             loss.backward()
             self.optimizer.step()
@@ -446,7 +448,7 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     Top 1: 512:75|71, 256:74|71|70(less)
@@ -454,11 +456,11 @@ if __name__ == '__main__':
     """
 
     _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _name = "5_class_{}_l2loss".format(_low_dim)
 
     _momentum = 0.5
     _pre_train = None
-    # _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
+    # _pre_train = "./checkpoint/5_class_256_softmax/ckpt.t7"
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()

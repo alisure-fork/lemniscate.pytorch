@@ -1,5 +1,6 @@
 import os
 import torch
+import numpy as np
 from PIL import Image
 import torch.nn as nn
 import torch.optim as optim
@@ -229,7 +230,7 @@ class KNN(object):
 
                     total += targets.size(0)
 
-                    if batch_idx % 50 == 0:
+                    if batch_idx % 100 == 0:
                         Tools.print('Test {} [{}/{}] Top1: {:.2f}  Top5: {:.2f}'.format(
                             epoch, total, sample_number, top1 * 100. / total, top5 * 100. / total))
                     pass
@@ -267,6 +268,7 @@ class ProduceClass(nn.Module):
         self.n_sample = n_sample
         self.momentum = momentum
         self.class_per_num = self.n_sample // self.low_dim * 2
+        self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
         self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
         self.register_buffer('class_num', torch.zeros(self.low_dim).long())
@@ -299,10 +301,7 @@ class ProduceClass(nn.Module):
     def forward(self, out, indexes, is_update=False, is_reset=False):
         if is_update:
             if is_reset:
-                for i in range(self.low_dim):
-                    self.class_num.index_copy_(0, torch.tensor(i).cuda(), torch.zeros(1).long().cuda())
-                    pass
-                pass
+                self.class_num.index_copy_(0, self.classes_index, torch.zeros(self.low_dim).long().cuda())
             classes = self.update_label(out, indexes)
         else:
             classes = self.classes.index_select(0, indexes.data.view(-1)).resize_as_(indexes)
@@ -353,7 +352,7 @@ class AttentionRunner(object):
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
             checkpoint = torch.load(self.pre_train)
-            net.load_state_dict(checkpoint['net'])
+            net.load_state_dict(checkpoint['net'], strict=False)
             pass
 
         # Load checkpoint.
@@ -383,11 +382,12 @@ class AttentionRunner(object):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 out = self.net(inputs)
                 classes = self.produce_class(out, indexes, True, True if batch_idx == 0 else False)
-                if batch_idx % 50 == 0:
+                if batch_idx % 100 == 0:
                     Tools.print('Epoch: [{}][{}/{}] {})'.format(epoch, batch_idx, len(self.train_loader),
                                                                 [int(_) for _ in classes]))
                     pass
                 pass
+            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
 
             Tools.print()
             Tools.print("Test {} .......".format(epoch))
@@ -420,7 +420,7 @@ class AttentionRunner(object):
             loss.backward()
             self.optimizer.step()
 
-            if batch_idx % 50 == 0:
+            if batch_idx % 100 == 0:
                 Tools.print('Epoch: [{}][{}/{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
                         epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss))
                 pass
@@ -446,11 +446,20 @@ if __name__ == '__main__':
     """
 
     _low_dim = 128
+    _name = "4_class_{}_softmax".format(_low_dim)
 
-    pre_train = None
-    # pre_train = "./checkpoint/attention_class_{}_back/ckpt.t7".format(_low_dim)
-    runner = AttentionRunner(low_dim=_low_dim, resume=False, pre_train=pre_train,
-                             checkpoint_path="./checkpoint/attention_class_{}_lr/ckpt.t7".format(_low_dim))
+    _momentum = 0.5
+    _pre_train = None
+    # _pre_train = "./checkpoint/5_class_256_softmax/ckpt.t7"
+    _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
+
+    Tools.print()
+    Tools.print("low_dim={} name={} pre_train={} momentum={} checkpoint_path={}".format(
+        _low_dim, _name, _pre_train, _momentum, _checkpoint_path))
+    Tools.print()
+
+    runner = AttentionRunner(low_dim=_low_dim, momentum=_momentum, resume=False,
+                             pre_train=_pre_train, checkpoint_path=_checkpoint_path)
 
     Tools.print()
     acc = runner.test()

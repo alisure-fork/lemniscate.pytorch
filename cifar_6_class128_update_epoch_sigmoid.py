@@ -11,21 +11,6 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
 
-class Normalize(nn.Module):
-
-    def __init__(self, power=2):
-        super(Normalize, self).__init__()
-        self.power = power
-        pass
-
-    def forward(self, x, dim=1):
-        norm = x.pow(self.power).sum(dim, keepdim=True).pow(1. / self.power)
-        out = x.div(norm)
-        return out
-
-    pass
-
-
 class AttentionBasicBlock(nn.Module):
     expansion = 1
 
@@ -66,8 +51,8 @@ class AttentionResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear_256 = nn.Linear(512 * block.expansion, low_dim)
-        self.softmax = nn.Softmax(dim=-1)
+        self.linear = nn.Linear(512 * block.expansion, low_dim)
+        self.sigmoid = nn.Sigmoid()
         pass
 
     def _make_layer(self, block, planes, num_blocks, stride):
@@ -86,9 +71,9 @@ class AttentionResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_256(out)
-        out_softmax = self.softmax(out_logits)
-        return out_logits, out_softmax
+        out_logits = self.linear(out)
+        out_sigmoid = self.sigmoid(out_logits)
+        return out_logits, out_sigmoid
 
     pass
 
@@ -230,7 +215,7 @@ class KNN(object):
 
                     total += targets.size(0)
 
-                    if batch_idx % 100 == 0:
+                    if batch_idx % 50 == 0:
                         Tools.print('Test {} [{}/{}] Top1: {:.2f}  Top5: {:.2f}'.format(
                             epoch, total, sample_number, top1 * 100. / total, top5 * 100. / total))
                     pass
@@ -250,7 +235,7 @@ class AttentionLoss(nn.Module):
 
     def __init__(self):
         super(AttentionLoss, self).__init__()
-        self.criterion_no = nn.CrossEntropyLoss()
+        self.criterion_no = nn.BCEWithLogitsLoss()
         pass
 
     def forward(self, out, targets):
@@ -262,15 +247,16 @@ class AttentionLoss(nn.Module):
 
 class ProduceClass(nn.Module):
 
-    def __init__(self, n_sample, low_dim, momentum=0.5):
+    def __init__(self, n_sample, low_dim, momentum=0.5, k_class=16):
         super(ProduceClass, self).__init__()
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
-        self.class_per_num = self.n_sample // self.low_dim
+        self.k_class = k_class
+        self.class_per_num = self.n_sample // self.low_dim * 2 * 16
         self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
 
-        self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
+        self.register_buffer('classes', (torch.rand(self.n_sample, self.low_dim) * self.low_dim).float())
         self.register_buffer('class_num', torch.zeros(self.low_dim).long())
         self.register_buffer('memory', torch.rand(self.n_sample, self.low_dim))
         pass
@@ -280,37 +266,39 @@ class ProduceClass(nn.Module):
         old_features.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
         updated_weight = old_features
 
-        top_k = updated_weight.topk(self.low_dim, dim=1)[1]
+        _, top_k_index = updated_weight.topk(self.low_dim, dim=1)
 
-        top_k = top_k.cpu()
         batch_size = out.size(0)
+        class_labels = np.zeros(shape=(batch_size, self.low_dim), dtype=np.int)
+        top_k_index = top_k_index.cpu()
         class_num = self.class_num.cpu()
-        new_class_num = np.zeros(shape=(batch_size, self.low_dim), dtype=np.int)
-        class_labels = np.zeros(shape=(batch_size,), dtype=np.int)
         for i in range(batch_size):
-            for j in top_k[i]:
-                if self.class_per_num > class_num[j]:
-                    class_labels[i] += j
-                    new_class_num[i][j] += 1
+            k = 0
+            for index in top_k_index[i]:
+                if k >= self.k_class:
                     break
+                if self.class_per_num > class_num[index]:
+                    class_labels[i][index] = 1
+                    k += 1
+                    pass
                 pass
             pass
-        new_class_num = torch.tensor(new_class_num).long().cuda()
-        self.class_num.index_copy_(0, self.classes_index, self.class_num + new_class_num.sum(0))
+
+        class_labels = torch.tensor(class_labels).cuda()
+        self.class_num.index_copy_(0, self.classes_index, self.class_num + class_labels.sum(0))
 
         # update
-        class_labels = torch.tensor(class_labels).long().cuda()
-        self.classes.index_copy_(0, indexes, class_labels)
+        self.classes.index_copy_(0, indexes, class_labels.float())
         self.memory.index_copy_(0, indexes, updated_weight)
         return class_labels
 
-    def forward(self, out, indexes, is_update=False, is_reset=False):
+    def forward(self, out_logits, out, indexes, is_update=False, is_reset=False):
         if is_update:
             if is_reset:
                 self.class_num.index_copy_(0, self.classes_index, torch.zeros(self.low_dim).long().cuda())
             classes = self.update_label(out, indexes)
         else:
-            classes = self.classes.index_select(0, indexes.data.view(-1)).resize_as_(indexes)
+            classes = self.classes.index_select(0, indexes.data.view(-1))
         return classes
 
     pass
@@ -318,7 +306,7 @@ class ProduceClass(nn.Module):
 
 class AttentionRunner(object):
 
-    def __init__(self, low_dim=128, momentum=0.5, learning_rate=0.03, resume=False,
+    def __init__(self, low_dim=128, k_class=16, momentum=0.5, learning_rate=0.03, resume=False,
                  checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
@@ -340,7 +328,7 @@ class AttentionRunner(object):
 
         self._load_model(self.net)
 
-        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim).cuda()
+        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, k_class=k_class).cuda()
         self.criterion = AttentionLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
@@ -358,7 +346,7 @@ class AttentionRunner(object):
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
             checkpoint = torch.load(self.pre_train)
-            net.load_state_dict(checkpoint['net'], strict=False)
+            net.load_state_dict(checkpoint['net'])
             pass
 
         # Load checkpoint.
@@ -387,14 +375,11 @@ class AttentionRunner(object):
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 out_logits, out = self.net(inputs)
-                classes = self.produce_class(out, indexes, True, True if batch_idx == 0 else False)
-                if batch_idx % 100 == 0:
-                    Tools.print('Epoch: [{}][{}/{}] {})'.format(epoch, batch_idx, len(self.train_loader),
-                                                                [int(_) for _ in classes]))
+                _ = self.produce_class(out_logits, out, indexes, True, True if batch_idx == 0 else False)
+                if batch_idx % 50 == 0:
+                    Tools.print('Epoch: [{}][{}/{}]'.format(epoch, batch_idx, len(self.train_loader)))
                     pass
                 pass
-
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
 
             Tools.print()
             Tools.print("Test {} .......".format(epoch))
@@ -420,14 +405,14 @@ class AttentionRunner(object):
             self.optimizer.zero_grad()
 
             out_logits, out = self.net(inputs)
-            targets = self.produce_class(out, indexes)
+            targets = self.produce_class(out_logits, out, indexes)
 
             loss = self.criterion(out_logits, targets)
             avg_loss.update(loss.item(), inputs.size(0))
             loss.backward()
             self.optimizer.step()
 
-            if batch_idx % 100 == 0:
+            if batch_idx % 50 == 0:
                 Tools.print('Epoch: [{}][{}/{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
                         epoch, batch_idx, len(self.train_loader), avg_loss=avg_loss))
                 pass
@@ -449,29 +434,21 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    Top 1: 512:75|71, 256:74|71|70(less)
-          1024:71.98, 71.37
+    Top 1: 0.68
     """
 
-    _low_dim = 256
-    _name = "5_class_{}_softmax".format(_low_dim)
+    _low_dim = 128
+    _k_class = 3
+    _name = "5_class_{}_sigmoid_{}".format(_low_dim, _k_class)
 
-    _momentum = 0.5
-    _pre_train = None
-    # _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
-    _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    pre_train = None
+    # pre_train = "./checkpoint/attention_class_{}_back/ckpt.t7".format(_low_dim)
+    runner = AttentionRunner(low_dim=_low_dim, k_class=_k_class, resume=False, pre_train=pre_train,
+                             checkpoint_path="./checkpoint/{}/ckpt.t7".format(_name))
 
-    Tools.print()
-    Tools.print("low_dim={} name={} pre_train={} momentum={} checkpoint_path={}".format(
-        _low_dim, _name, _pre_train, _momentum, _checkpoint_path))
-    Tools.print()
-
-    runner = AttentionRunner(low_dim=_low_dim, learning_rate=0.03, momentum=_momentum, resume=False,
-                             pre_train=_pre_train, checkpoint_path=_checkpoint_path)
-
-    Tools.print()
-    acc = runner.test()
-    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
+    # Tools.print()
+    # acc = runner.test()
+    # Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
 
     runner.train(epoch_num=300, update_epoch=1)
 
