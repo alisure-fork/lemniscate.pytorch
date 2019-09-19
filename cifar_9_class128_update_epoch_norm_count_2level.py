@@ -420,7 +420,7 @@ class AttentionRunner(object):
             checkpoint = torch.load(self.checkpoint_path)
             net.load_state_dict(checkpoint['net'])
             self.best_acc = checkpoint['acc']
-            self.start_epoch = checkpoint['epoch']
+            # self.start_epoch = checkpoint['epoch']
             Tools.print("{} {}".format(self.best_acc, self.start_epoch))
             pass
         pass
@@ -445,9 +445,12 @@ class AttentionRunner(object):
                 self.produce_class2(out_l2norm2, indexes, True, True if batch_idx == 0 else False)
                 pass
             Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
-            Tools.print("Epoch: [{}] {}/{}-{}".format(epoch, self.produce_class.count,
-                                                      self.produce_class.count_2,
-                                                      self.train_loader.dataset.__len__()))
+            Tools.print("Epoch: [{}] 1 {}/{}-{}".format(epoch, self.produce_class.count,
+                                                        self.produce_class.count_2,
+                                                        self.train_loader.dataset.__len__()))
+            Tools.print("Epoch: [{}] 2 {}/{}-{}".format(epoch, self.produce_class2.count,
+                                                        self.produce_class2.count_2,
+                                                        self.train_loader.dataset.__len__()))
 
             Tools.print()
             Tools.print("Test {} .......".format(epoch))
@@ -523,13 +526,21 @@ if __name__ == '__main__':
     
     norm more
     Top 1: 82.99(1024, 1000 + 1000, 2)/82.93(128, 1000 + 1000, 2)/6365-2196-50000
+           82.82(1024, 1000, 2)/82.21(128, 1000, 2) 7781-2108-50000
+           82.63(1024, 1000, 2)/82.71(128, 1000, 2) 8399-2376-50000
+           84.25(1024, 1000 + 700, 2)/83.96(128, 1000 + 700, 2) 7880-2308-50000
+           
+           82.42(2048, 1000, 2)/81.88(128, 1000, 2) 9666-3016-50000
+           83.58(2048, 1000 + 750, 2)/83.11(128, 1000 + 750, 2) xxxx-xxxx-50000
+           82.27(4096, 1000, 2)/81.50(128, 1000, 2) 11109-3843-50000 / 5824/1399-50000
     """
 
-    _low_dim = 1024
+    _low_dim = 4096
     _low_dim2 = 128
     _name = "9_class_{}_norm_count_2level_{}_lr_1000".format(_low_dim, _low_dim2)
 
     _momentum = 0.5
+    _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
@@ -545,7 +556,7 @@ if __name__ == '__main__':
 
     runner = AttentionRunner(low_dim=_low_dim, low_dim2=_low_dim2, learning_rate=0.03, momentum=_momentum,
                              max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
-                             resume=False, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
+                             resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
 
     Tools.print()
     acc = runner.test()

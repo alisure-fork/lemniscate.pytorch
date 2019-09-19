@@ -57,7 +57,7 @@ class AttentionBasicBlock(nn.Module):
 
 class AttentionResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=128):
+    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10):
         super(AttentionResNet, self).__init__()
         self.in_planes = 64
 
@@ -67,7 +67,9 @@ class AttentionResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear_256 = nn.Linear(512 * block.expansion, low_dim)
+        self.linear_512 = nn.Linear(512 * block.expansion, low_dim)
+        self.linear_128 = nn.Linear(low_dim, low_dim2)
+        self.linear_10 = nn.Linear(low_dim2, low_dim3)
         self.l2norm = Normalize(2)
         pass
 
@@ -87,9 +89,15 @@ class AttentionResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_256(out)
+        out_logits = self.linear_512(out)
         out_l2norm = self.l2norm(out_logits)
-        return out_logits, out_l2norm
+
+        out_logits2 = self.linear_128(out_logits)
+        out_l2norm2 = self.l2norm(out_logits2)
+
+        out_logits3 = self.linear_10(out_logits2)
+        out_l2norm3 = self.l2norm(out_logits3)
+        return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3
 
     pass
 
@@ -172,10 +180,13 @@ class CIFAR10Instance(datasets.CIFAR10):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, produce_class, train_loader, test_loader, k, t, recompute_memory=0, loader_n=1):
+    def knn(epoch, net, produce_class, produce_class2, produce_class3,
+            train_loader, test_loader, k, t, recompute_memory=0, loader_n=1):
         net.eval()
 
         out_memory = produce_class.memory.t()
+        out_memory2 = produce_class2.memory.t()
+        out_memory3 = produce_class3.memory.t()
         train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
         c = train_labels.max() + 1
 
@@ -185,55 +196,73 @@ class KNN(object):
             train_loader.dataset.transform = test_loader.dataset.transform
             temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
             for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-                out_logits, out_l2norm = net(inputs)
+                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
                 batch_size = inputs.size(0)
                 out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
+                out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
+                out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
                 pass
 
             train_loader.dataset.transform = transform_bak
             pass
+
+        def _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5):
+            # ---------------------------------------------------------------------------------- #
+            batch_size = inputs.size(0)
+            yd, yi = dist.topk(k, dim=1, largest=True, sorted=True)
+            candidates = train_labels.view(1, -1).expand(batch_size, -1)
+            retrieval = torch.gather(candidates, 1, yi)
+
+            retrieval_one_hot.resize_(batch_size * k, c).zero_()
+            retrieval_one_hot = retrieval_one_hot.scatter_(1, retrieval.view(-1, 1),
+                                                           1).view(batch_size, -1, c)
+            yd_transform = yd.clone().div_(t).exp_().view(batch_size, -1, 1)
+            probs = torch.sum(torch.mul(retrieval_one_hot, yd_transform), 1)
+            _, predictions = probs.sort(1, True)
+            # ---------------------------------------------------------------------------------- #
+
+            # Find which predictions match the target
+            correct = predictions.eq(targets.data.view(-1, 1))
+
+            top1 += correct.narrow(1, 0, 1).sum().item()
+            top5 += correct.narrow(1, 0, 5).sum().item()
+            return top1, top5, retrieval_one_hot
 
         all_acc = []
         with torch.no_grad():
             now_loader = [test_loader] if loader_n == 1 else [test_loader, train_loader]
 
             for loader in now_loader:
-                top1 = 0.
-                top5 = 0.
+                top1, top5 = 0., 0.
+                top12, top52 = 0., 0.
+                top13, top53 = 0., 0.
                 total = 0
 
-                sample_number = loader.dataset.__len__()
                 retrieval_one_hot = torch.zeros(k, c).cuda()  # [200, 10]
+                retrieval_one_hot2 = torch.zeros(k, c).cuda()  # [200, 10]
+                retrieval_one_hot3 = torch.zeros(k, c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
-                    out_logits, out_l2norm = net(inputs)
-                    dist = torch.mm(out_l2norm, out_memory)
-
-                    # ---------------------------------------------------------------------------------- #
-                    batch_size = inputs.size(0)
-                    yd, yi = dist.topk(k, dim=1, largest=True, sorted=True)
-                    candidates = train_labels.view(1, -1).expand(batch_size, -1)
-                    retrieval = torch.gather(candidates, 1, yi)
-
-                    retrieval_one_hot.resize_(batch_size * k, c).zero_()
-                    retrieval_one_hot = retrieval_one_hot.scatter_(1, retrieval.view(-1, 1),
-                                                                   1).view(batch_size, -1, c)
-                    yd_transform = yd.clone().div_(t).exp_().view(batch_size, -1, 1)
-                    probs = torch.sum(torch.mul(retrieval_one_hot, yd_transform), 1)
-                    _, predictions = probs.sort(1, True)
-                    # ---------------------------------------------------------------------------------- #
-
-                    # Find which predictions match the target
-                    correct = predictions.eq(targets.data.view(-1, 1))
-
-                    top1 += correct.narrow(1, 0, 1).sum().item()
-                    top5 += correct.narrow(1, 0, 5).sum().item()
-
                     total += targets.size(0)
+
+                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+                    dist = torch.mm(out_l2norm, out_memory)
+                    dist2 = torch.mm(out_l2norm2, out_memory2)
+                    dist3 = torch.mm(out_l2norm3, out_memory3)
+                    top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5)
+                    top12, top52, retrieval_one_hot2 = _cal(inputs, dist2, train_labels,
+                                                            retrieval_one_hot2, top12, top52)
+                    top13, top53, retrieval_one_hot3 = _cal(inputs, dist3, train_labels,
+                                                            retrieval_one_hot3, top13, top53)
                     pass
 
-                Tools.print("Test {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total, top5 * 100. / total))
-                all_acc.append(top1 / total)
+                Tools.print("Test 1 {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total,
+                                                                       top5 * 100. / total))
+                Tools.print("Test 2 {} Top1={:.2f} Top5={:.2f}".format(epoch, top12 * 100. / total,
+                                                                       top52 * 100. / total))
+                Tools.print("Test 3 {} Top1={:.2f} Top5={:.2f}".format(epoch, top13 * 100. / total,
+                                                                       top53 * 100. / total))
+                all_acc.append(top13 / total)
 
                 pass
             pass
@@ -259,12 +288,12 @@ class AttentionLoss(nn.Module):
 
 class ProduceClass(nn.Module):
 
-    def __init__(self, n_sample, low_dim, momentum=0.5):
+    def __init__(self, n_sample, low_dim, momentum=0.5, ratio=1.0):
         super(ProduceClass, self).__init__()
         self.low_dim = low_dim
         self.n_sample = n_sample
         self.momentum = momentum
-        self.class_per_num = self.n_sample // self.low_dim * 2
+        self.class_per_num = self.n_sample // self.low_dim * ratio
         self.count = 0
         self.count_2 = 0
 
@@ -325,9 +354,9 @@ class ProduceClass(nn.Module):
 
 class AttentionRunner(object):
 
-    def __init__(self, low_dim=128, momentum=0.5, learning_rate=0.03,
-                 max_epoch=1000, t_epoch=300, first_epoch=200,
-                 resume=False, checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
+    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, momentum=0.5, learning_rate=0.03,
+                 max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
+                 checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
         self.resume = resume
@@ -335,20 +364,23 @@ class AttentionRunner(object):
         self.data_root = data_root
         self.momentum = momentum
         self.low_dim = low_dim
+        self.low_dim2 = low_dim2
+        self.low_dim3 = low_dim3
 
         self.best_acc = 0
-        self.start_epoch = 0
 
         self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
             self.data_root)
         self.train_num = self.train_set.__len__()
 
-        self.net = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], self.low_dim).cuda()
+        self.net = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], self.low_dim, self.low_dim2, self.low_dim3).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
 
-        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim).cuda()
+        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=3).cuda()
+        self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=2).cuda()
+        self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=1).cuda()
         self.criterion = AttentionLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
 
@@ -357,7 +389,7 @@ class AttentionRunner(object):
         self.t_epoch = t_epoch
         pass
 
-    def _adjust_learning_rate(self, epoch):
+    def _adjust_learning_rate2(self, epoch):
 
         def _get_lr(_base_lr, now_epoch, _t_epoch=self.t_epoch, _eta_min=1e-05):
             return _eta_min + (_base_lr - _eta_min) * (1 + math.cos(math.pi * now_epoch / _t_epoch)) / 2
@@ -388,6 +420,22 @@ class AttentionRunner(object):
             pass
         pass
 
+    def _adjust_learning_rate(self, epoch):
+        if epoch < 200:
+            learning_rate = self.learning_rate
+        elif epoch < 300:
+            learning_rate = self.learning_rate * 0.1
+        elif epoch < 400:
+            learning_rate = self.learning_rate * 0.01
+        else:
+            learning_rate = self.learning_rate * 0.001
+            pass
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = learning_rate
+            pass
+        return learning_rate
+
     def _load_model(self, net):
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
@@ -401,13 +449,14 @@ class AttentionRunner(object):
             checkpoint = torch.load(self.checkpoint_path)
             net.load_state_dict(checkpoint['net'])
             self.best_acc = checkpoint['acc']
-            self.start_epoch = checkpoint['epoch']
-            Tools.print("{} {}".format(self.best_acc, self.start_epoch))
+            best_epoch = checkpoint['epoch']
+            Tools.print("{} {}".format(self.best_acc, best_epoch))
             pass
         pass
 
     def test(self, epoch=0, t=0.1, recompute_memory=1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.produce_class, self.train_loader, self.test_loader,
+        _acc = KNN.knn(epoch, self.net, self.produce_class, self.produce_class2,
+                       self.produce_class3, self.train_loader, self.test_loader,
                        200, t, recompute_memory, loader_n=loader_n)
         return _acc
 
@@ -420,13 +469,23 @@ class AttentionRunner(object):
             Tools.print("Update label {} .......".format(epoch))
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
-                out_logits, out_l2norm = self.net(inputs)
+                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
                 self.produce_class(out_l2norm, indexes, True, True if batch_idx == 0 else False)
+                self.produce_class2(out_l2norm2, indexes, True, True if batch_idx == 0 else False)
+                self.produce_class3(out_l2norm3, indexes, True, True if batch_idx == 0 else False)
                 pass
             Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
-            Tools.print("Epoch: [{}] {}/{}-{}".format(epoch, self.produce_class.count,
-                                                      self.produce_class.count_2,
-                                                      self.train_loader.dataset.__len__()))
+            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class2.class_num]))
+            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class3.class_num]))
+            Tools.print("Epoch: [{}] 1 {}/{}-{}".format(epoch, self.produce_class.count,
+                                                        self.produce_class.count_2,
+                                                        self.train_loader.dataset.__len__()))
+            Tools.print("Epoch: [{}] 2 {}/{}-{}".format(epoch, self.produce_class2.count,
+                                                        self.produce_class2.count_2,
+                                                        self.train_loader.dataset.__len__()))
+            Tools.print("Epoch: [{}] 3 {}/{}-{}".format(epoch, self.produce_class3.count,
+                                                        self.produce_class3.count_2,
+                                                        self.train_loader.dataset.__len__()))
 
             Tools.print()
             Tools.print("Test {} .......".format(epoch))
@@ -447,25 +506,45 @@ class AttentionRunner(object):
 
         self._adjust_learning_rate(epoch)
 
-        avg_loss = AverageMeter()
+        avg_loss_1 = AverageMeter()
+        avg_loss_2 = AverageMeter()
+        avg_loss_3 = AverageMeter()
         for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
             inputs, indexes = inputs.cuda(), indexes.cuda()
             self.optimizer.zero_grad()
 
-            out_logits, out_l2norm = self.net(inputs)
+            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
             targets = self.produce_class(out_l2norm, indexes)
+            targets2 = self.produce_class2(out_l2norm2, indexes)
+            targets3 = self.produce_class3(out_l2norm3, indexes)
 
-            loss = self.criterion(out_logits, targets)
-            avg_loss.update(loss.item(), inputs.size(0))
-            loss.backward()
+            loss_1 = self.criterion(out_logits, targets)
+            loss_2 = self.criterion(out_logits2, targets2)
+            loss_3 = self.criterion(out_logits3, targets3)
+            avg_loss_1.update(loss_1.item(), inputs.size(0))
+            avg_loss_2.update(loss_2.item(), inputs.size(0))
+            avg_loss_3.update(loss_3.item(), inputs.size(0))
+            if batch_idx % 3 == 0:
+                loss_1.backward()
+            elif batch_idx % 3 == 1:
+                loss_2.backward()
+            else:
+                loss_3.backward()
+                pass
             self.optimizer.step()
             pass
-        Tools.print('Epoch: [{}][{}] Loss +: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
-            epoch, len(self.train_loader), avg_loss=avg_loss))
+
+        Tools.print(
+            'Epoch: [{}/{}] '
+            'Loss 1: {avg_loss_1.val:.4f} ({avg_loss_1.avg:.4f}) '
+            'Loss 2: {avg_loss2.val:.4f} ({avg_loss2.avg:.4f}) '
+            'Loss 3: {avg_loss3.val:.4f} ({avg_loss3.avg:.4f})'.format(
+                epoch, len(self.train_loader), avg_loss_1=avg_loss_1, avg_loss2=avg_loss_2, avg_loss3=avg_loss_3))
+
         pass
 
-    def train(self, update_epoch=3):
-        for epoch in range(self.start_epoch, self.start_epoch + self.max_epoch):
+    def train(self, start_epoch, update_epoch=3):
+        for epoch in range(start_epoch, self.max_epoch):
             self._train_one_epoch(epoch, update_epoch=update_epoch)
             pass
         pass
@@ -477,37 +556,58 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    Top 1:  256(74.91, 300, 2)
-           1024(75.50, 300, 2)
-           1024(78.06, 300+300, 2)
-           1024(81.90, 1000, 2, lr)
+    First train auto-encoder and then train my method.
+    
+    1. more sample per class 512 * 3
+    2. more sample per class 128 * 2
+    3. equal sample per class 10 * 1
+    Top 1: 80.21, 79.97, 73.95
+    
+    Top 1: 83.57(1024, 9642/2325), 83.39(128, 5814/1326), 74.89(10, 3665/1181)|(1000)
+    Top 1: 84.64(1024, 9378/2333), 84.63(128, 6258/1636), 78.44(10, 3999/1342)|(1000+750)
+    
+    Top 1: 83.13(1024, 9741/2609), 83.26(256, 7469/1976), 83.24(64, 6654/1833)|(1000)
+    Top 1: 84.66(9660, 9741/2668), 84.76(256, 6404/1465), 84.31(64, 5897/1516)|(1000+750)
+    
+    Top 1: 83.64(2048, 10896/2997), 83.59(512, 7803/1882), 83.36(128, 7152/1760)|(1000)
+    Top 1: 84.76(2048, 10470/3066), 84.87(512, 7663/2019), 84.54(128, 6924/1867)|(1000+750)
+    
     """
 
+    # _low_dim = 2048
+    # _low_dim2 = 512
+    # _low_dim3 = 128
     _low_dim = 1024
-    _name = "9_class_{}_norm_count_lr".format(_low_dim)
-    _momentum = 0.5
-    _pre_train = None
-    # _pre_train = "./checkpoint/{}/ckpt.t7".format(_name)
-    _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    _low_dim2 = 256
+    _low_dim3 = 64
 
-    Tools.print()
-    Tools.print("low_dim={} name={} pre_train={} momentum={} checkpoint_path={}".format(
-        _low_dim, _name, _pre_train, _momentum, _checkpoint_path))
-    Tools.print()
-
-    _max_epoch = 1000
+    _start_epoch = 100
+    _max_epoch = 500
     _first_epoch = 300
     _t_epoch = 100
 
-    runner = AttentionRunner(low_dim=_low_dim, learning_rate=0.03, momentum=_momentum,
+    _momentum = 0.5
+    _resume = False
+    # _pre_train = None
+
+    _name = "9_class_{}_norm_count_3level_{}_{}_lr_{}".format(_low_dim, _low_dim2, _low_dim3, _max_epoch)
+    _pre_train = "./checkpoint/9_class_1024_norm_count_3level_256_64_lr_1000/ckpt.t7"
+    _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
+
+    Tools.print()
+    Tools.print("low_dim={} low_dim2={} low_dim3={} name={} pre_train={} momentum={} checkpoint_path={}".format(
+        _low_dim, _low_dim2, _low_dim3, _name, _pre_train, _momentum, _checkpoint_path))
+    Tools.print()
+
+    runner = AttentionRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3, momentum=_momentum,
                              max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
-                             resume=False, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
+                             resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
 
     Tools.print()
     acc = runner.test()
     Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
 
-    runner.train(update_epoch=1)
+    runner.train(start_epoch=_start_epoch, update_epoch=1)
 
     Tools.print()
     acc = runner.test(loader_n=2)
