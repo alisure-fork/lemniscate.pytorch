@@ -57,7 +57,7 @@ class AttentionBasicBlock(nn.Module):
 
 class AttentionResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10):
+    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10, linear_bias=True):
         super(AttentionResNet, self).__init__()
         self.in_planes = 64
 
@@ -67,9 +67,9 @@ class AttentionResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear_512 = nn.Linear(512 * block.expansion, low_dim)
-        self.linear_128 = nn.Linear(low_dim, low_dim2)
-        self.linear_10 = nn.Linear(low_dim2, low_dim3)
+        self.linear_512 = nn.Linear(512 * block.expansion, low_dim, bias=linear_bias)
+        self.linear_128 = nn.Linear(low_dim, low_dim2, bias=linear_bias)
+        self.linear_10 = nn.Linear(low_dim2, low_dim3, bias=linear_bias)
         self.l2norm = Normalize(2)
         pass
 
@@ -180,31 +180,26 @@ class CIFAR10Instance(datasets.CIFAR10):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, produce_class, produce_class2, produce_class3,
-            train_loader, test_loader, k, t, recompute_memory=0, loader_n=1):
+    def knn(epoch, net, low_dim, low_dim2, low_dim3, train_loader, test_loader, k, t, loader_n=1):
         net.eval()
-
-        out_memory = produce_class.memory.t()
-        out_memory2 = produce_class2.memory.t()
-        out_memory3 = produce_class3.memory.t()
+        n_sample = train_loader.dataset.__len__()
+        out_memory = torch.rand(n_sample, low_dim).t().cuda()
+        out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
+        out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
         train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
-        c = train_labels.max() + 1
+        max_c = train_labels.max() + 1
 
-        if recompute_memory:
-            transform_bak = train_loader.dataset.transform
-
-            train_loader.dataset.transform = test_loader.dataset.transform
-            temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
-            for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
-                batch_size = inputs.size(0)
-                out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
-                out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
-                out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
-                pass
-
-            train_loader.dataset.transform = transform_bak
+        transform_bak = train_loader.dataset.transform
+        train_loader.dataset.transform = test_loader.dataset.transform
+        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
+        for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
+            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+            batch_size = inputs.size(0)
+            out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
+            out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
+            out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
             pass
+        train_loader.dataset.transform = transform_bak
 
         def _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5):
             # ---------------------------------------------------------------------------------- #
@@ -213,9 +208,9 @@ class KNN(object):
             candidates = train_labels.view(1, -1).expand(batch_size, -1)
             retrieval = torch.gather(candidates, 1, yi)
 
-            retrieval_one_hot.resize_(batch_size * k, c).zero_()
+            retrieval_one_hot.resize_(batch_size * k, max_c).zero_()
             retrieval_one_hot = retrieval_one_hot.scatter_(1, retrieval.view(-1, 1),
-                                                           1).view(batch_size, -1, c)
+                                                           1).view(batch_size, -1, max_c)
             yd_transform = yd.clone().div_(t).exp_().view(batch_size, -1, 1)
             probs = torch.sum(torch.mul(retrieval_one_hot, yd_transform), 1)
             _, predictions = probs.sort(1, True)
@@ -238,9 +233,9 @@ class KNN(object):
                 top13, top53 = 0., 0.
                 total = 0
 
-                retrieval_one_hot = torch.zeros(k, c).cuda()  # [200, 10]
-                retrieval_one_hot2 = torch.zeros(k, c).cuda()  # [200, 10]
-                retrieval_one_hot3 = torch.zeros(k, c).cuda()  # [200, 10]
+                retrieval_one_hot = torch.zeros(k, max_c).cuda()  # [200, 10]
+                retrieval_one_hot2 = torch.zeros(k, max_c).cuda()  # [200, 10]
+                retrieval_one_hot3 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
@@ -279,83 +274,63 @@ class AttentionLoss(nn.Module):
         self.criterion_no = nn.CrossEntropyLoss()
         pass
 
-    def forward(self, out, targets, ):
+    def forward(self, out, targets, param):
         loss_1 = self.criterion_no(out, targets)
-        return loss_1
+        loss_2 = torch.norm(param, 1) / out.size()[-1]
+        return loss_1 + loss_2, loss_1, loss_2
 
     pass
 
 
-class ProduceClass(nn.Module):
+class ProduceClass(object):
 
-    def __init__(self, n_sample, low_dim, momentum=0.5, ratio=1.0):
+    def __init__(self, n_sample, low_dim, ratio=1.0):
         super(ProduceClass, self).__init__()
         self.low_dim = low_dim
         self.n_sample = n_sample
-        self.momentum = momentum
         self.class_per_num = self.n_sample // self.low_dim * ratio
         self.count = 0
         self.count_2 = 0
-
-        self.classes_index = torch.tensor(list(range(self.low_dim))).cuda()
-        self.register_buffer('classes', (torch.rand(self.n_sample) * self.low_dim).long())
-        self.register_buffer('class_num', torch.zeros(self.low_dim).long())
-        self.register_buffer('memory', torch.rand(self.n_sample, self.low_dim))
+        self.class_num = np.zeros(shape=(self.low_dim, ), dtype=np.int)
+        self.classes = np.zeros(shape=(self.n_sample, ), dtype=np.int)
         pass
 
-    def update_label(self, out, indexes):
-        updated_weight = self.memory.index_select(0, indexes.data.view(-1)).resize_as_(out)
-        updated_weight.mul_(self.momentum).add_(torch.mul(out.data, 1 - self.momentum))
-        updated_weight.div(updated_weight.pow(2).sum(1, keepdim=True).pow(0.5))
-        top_k = updated_weight.topk(self.low_dim, dim=1)[1]
+    def reset(self):
+        self.count = 0
+        self.count_2 = 0
+        self.class_num *= 0
+        pass
 
-        top_k = top_k.cpu()
-        batch_size = out.size(0)
-        class_num = self.class_num.cpu()
-        new_class_num = np.zeros(shape=(batch_size, self.low_dim), dtype=np.int)
-        class_labels = np.zeros(shape=(batch_size,), dtype=np.int)
-        classes_cpu = self.classes.cpu()
+    def cal_label(self, out, indexes):
+        top_k = out.data.topk(self.low_dim, dim=1)[1].cpu()
         indexes_cpu = indexes.cpu()
+
+        batch_size = top_k.size(0)
+        class_labels = np.zeros(shape=(batch_size,), dtype=np.int)
+
         for i in range(batch_size):
             for j_index, j in enumerate(top_k[i]):
-                if self.class_per_num > class_num[j]:
-                    class_labels[i] += j
-                    new_class_num[i][j] += 1
-                    if classes_cpu[indexes_cpu[i]] != j:
-                        self.count += 1
-                    if j_index != 0:
-                        self.count_2 += 1
+                if self.class_per_num > self.class_num[j]:
+                    class_labels[i] = j
+                    self.class_num[j] += 1
+                    self.count += 1 if self.classes[indexes_cpu[i]] != j else 0
+                    self.classes[indexes_cpu[i]] = j
+                    self.count_2 += 1 if j_index != 0 else 0
                     break
                 pass
             pass
-        new_class_num = torch.tensor(new_class_num).long().cuda()
-        self.class_num.index_copy_(0, self.classes_index, self.class_num + new_class_num.sum(0))
+        pass
 
-        # update
-        class_labels = torch.tensor(class_labels).long().cuda()
-        self.classes.index_copy_(0, indexes, class_labels)
-        self.memory.index_copy_(0, indexes, updated_weight)
-        return class_labels
-
-    def forward(self, out, indexes, is_update=False, is_reset=False):
-        if is_update:
-            if is_reset:
-                self.count = 0
-                self.count_2 = 0
-                self.class_num.index_copy_(0, self.classes_index, torch.zeros(self.low_dim).long().cuda())
-                pass
-            classes = self.update_label(out, indexes)
-        else:
-            classes = self.classes.index_select(0, indexes.data.view(-1)).resize_as_(indexes)
-        return classes
+    def get_label(self, indexes):
+        return torch.tensor(self.classes[indexes.cpu()]).long().cuda()
 
     pass
 
 
 class AttentionRunner(object):
 
-    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, momentum=0.5,
-                 learning_rate=0.03, learning_rate_type=0,
+    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10,
+                 learning_rate=0.03, learning_rate_type=0, linear_bias=True, has_l1=False,
                  max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
                  checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
@@ -363,34 +338,37 @@ class AttentionRunner(object):
         self.resume = resume
         self.pre_train = pre_train
         self.data_root = data_root
-        self.momentum = momentum
+
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
         self.low_dim3 = low_dim3
 
-        self.best_acc = 0
-
+        self.t_epoch = t_epoch
+        self.max_epoch = max_epoch
+        self.first_epoch = first_epoch
+        self.linear_bias = linear_bias
+        self.has_l1 = has_l1
+        self.learning_rate_type = learning_rate_type
         self.adjust_learning_rate = self._adjust_learning_rate \
-            if learning_rate_type == 0 else self._adjust_learning_rate2
+            if self.learning_rate_type == 0 else self._adjust_learning_rate2
+
+        self.best_acc = 0
 
         self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
             self.data_root)
         self.train_num = self.train_set.__len__()
 
-        self.net = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], self.low_dim, self.low_dim2, self.low_dim3).cuda()
+        self.net = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2],
+                                   self.low_dim, self.low_dim2, self.low_dim3, linear_bias=linear_bias).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
 
-        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=3).cuda()
-        self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=2).cuda()
-        self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=1).cuda()
+        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=3)
+        self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=2)
+        self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=1)
         self.criterion = AttentionLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
-
-        self.max_epoch = max_epoch
-        self.first_epoch = first_epoch
-        self.t_epoch = t_epoch
         pass
 
     def _adjust_learning_rate(self, epoch):
@@ -418,21 +396,21 @@ class AttentionRunner(object):
             learning_rate = _get_lr(self.learning_rate / 30., epoch - first_epoch - t_epoch * 6)
             pass
 
-        Tools.print("[{}] lr={}".format(epoch, learning_rate))
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = learning_rate
             pass
-        pass
+
+        return learning_rate
 
     def _adjust_learning_rate2(self, epoch):
         if epoch < 100:
             learning_rate = self.learning_rate
         elif epoch < 200:
-            learning_rate = self.learning_rate * 0.3
+            learning_rate = self.learning_rate * 0.5
         elif epoch < 300:
             learning_rate = self.learning_rate * 0.1
         elif epoch < 400:
-            learning_rate = self.learning_rate * 0.03
+            learning_rate = self.learning_rate * 0.05
         else:
             learning_rate = self.learning_rate * 0.01
             pass
@@ -443,6 +421,7 @@ class AttentionRunner(object):
         return learning_rate
 
     def _load_model(self, net):
+        # Load PreTrain
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
             checkpoint = torch.load(self.pre_train)
@@ -463,96 +442,135 @@ class AttentionRunner(object):
             pass
         pass
 
-    def test(self, epoch=0, t=0.1, recompute_memory=1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.produce_class, self.produce_class2,
-                       self.produce_class3, self.train_loader, self.test_loader,
-                       200, t, recompute_memory, loader_n=loader_n)
+    def test(self, epoch=0, t=0.1, loader_n=1):
+        _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2, self.low_dim3,
+                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
         return _acc
 
     def _train_one_epoch(self, epoch, update_epoch=3):
 
-        # Update and Test
-        if epoch % update_epoch == 0:
-            self.net.eval()
-            Tools.print()
-            Tools.print("Update label {} .......".format(epoch))
+        # Update
+        try:
+            if epoch % update_epoch == 0:
+                self.net.eval()
+                Tools.print("Update label {} .......".format(epoch))
+                self.produce_class.reset()
+                self.produce_class2.reset()
+                self.produce_class3.reset()
+                for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
+                    inputs, indexes = inputs.cuda(), indexes.cuda()
+                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+                    self.produce_class.cal_label(out_l2norm, indexes)
+                    self.produce_class2.cal_label(out_l2norm2, indexes)
+                    self.produce_class3.cal_label(out_l2norm3, indexes)
+                    pass
+                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{}".format(
+                    epoch, self.produce_class2.count, self.produce_class2.count_2,
+                    self.produce_class2.count, self.produce_class2.count_2,
+                    self.produce_class3.count, self.produce_class3.count_2))
+                pass
+        finally:
+            pass
+
+        # Train
+        try:
+            self.net.train()
+            _learning_rate_ = self.adjust_learning_rate(epoch)
+            Tools.print('Epoch: {} {}'.format(epoch, _learning_rate_))
+
+            avg_loss_1 = AverageMeter()
+            avg_loss_1_1 = AverageMeter()
+            avg_loss_1_2 = AverageMeter()
+
+            avg_loss_2 = AverageMeter()
+            avg_loss_2_1 = AverageMeter()
+            avg_loss_2_2 = AverageMeter()
+
+            avg_loss_3 = AverageMeter()
+            avg_loss_3_1 = AverageMeter()
+            avg_loss_3_2 = AverageMeter()
+
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
-                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
-                self.produce_class(out_l2norm, indexes, True, True if batch_idx == 0 else False)
-                self.produce_class2(out_l2norm2, indexes, True, True if batch_idx == 0 else False)
-                self.produce_class3(out_l2norm3, indexes, True, True if batch_idx == 0 else False)
-                pass
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class.class_num]))
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class2.class_num]))
-            Tools.print("Epoch: [{}] {}".format(epoch, [int(_) for _ in self.produce_class3.class_num]))
-            Tools.print("Epoch: [{}] 1 {}/{}-{}".format(epoch, self.produce_class.count,
-                                                        self.produce_class.count_2,
-                                                        self.train_loader.dataset.__len__()))
-            Tools.print("Epoch: [{}] 2 {}/{}-{}".format(epoch, self.produce_class2.count,
-                                                        self.produce_class2.count_2,
-                                                        self.train_loader.dataset.__len__()))
-            Tools.print("Epoch: [{}] 3 {}/{}-{}".format(epoch, self.produce_class3.count,
-                                                        self.produce_class3.count_2,
-                                                        self.train_loader.dataset.__len__()))
+                self.optimizer.zero_grad()
 
-            Tools.print()
-            Tools.print("Test {} .......".format(epoch))
-            _acc = self.test(epoch=epoch, recompute_memory=0)
+                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+
+                targets = self.produce_class.get_label(indexes)
+                targets2 = self.produce_class2.get_label(indexes)
+                targets3 = self.produce_class3.get_label(indexes)
+
+                params = [_ for _ in self.net.module.parameters()]
+                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3])
+                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2])
+                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1])
+
+                # Tools.print('Epoch: [{}/{}] {}-{}-{} / {}-{}-{} / {}-{}-{}'.format(
+                #     epoch, len(self.train_loader),
+                #     loss_1.item(), loss_1_1.item(), loss_1_2.item(),
+                #     loss_2.item(), loss_2_1.item(), loss_2_2.item(),
+                #     loss_3.item(), loss_3_1.item(), loss_3_2.item()))
+
+                avg_loss_1.update(loss_1.item(), inputs.size(0))
+                avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))
+                avg_loss_1_2.update(loss_1_2.item(), inputs.size(0))
+
+                avg_loss_2.update(loss_2.item(), inputs.size(0))
+                avg_loss_2_1.update(loss_2_1.item(), inputs.size(0))
+                avg_loss_2_2.update(loss_2_2.item(), inputs.size(0))
+
+                avg_loss_3.update(loss_3.item(), inputs.size(0))
+                avg_loss_3_1.update(loss_3_1.item(), inputs.size(0))
+                avg_loss_3_2.update(loss_3_2.item(), inputs.size(0))
+
+                if self.has_l1:
+                    if batch_idx % 3 == 0:
+                        loss_1.backward()
+                    elif batch_idx % 3 == 1:
+                        loss_2.backward()
+                    else:
+                        loss_3.backward()
+                else:
+                    if batch_idx % 3 == 0:
+                        loss_1_1.backward()
+                    elif batch_idx % 3 == 1:
+                        loss_2_1.backward()
+                    else:
+                        loss_3_1.backward()
+                    pass
+
+                self.optimizer.step()
+                pass
+
+            Tools.print(
+                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) '
+                'Loss 2: {:.4f}({:.4f}/{:.4f}) Loss 3: {:.4f}({:.4f}/{:.4f})'.format(
+                    epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg,avg_loss_2.avg,
+                    avg_loss_2_1.avg, avg_loss_2_2.avg, avg_loss_3.avg, avg_loss_3_1.avg, avg_loss_3_2.avg))
+        finally:
+            pass
+
+        # Test
+        try:
+            Tools.print("Test [{}] .......".format(epoch))
+            _acc = self.test(epoch=epoch)
             if _acc > self.best_acc:
                 Tools.print('Saving..')
                 state = {'net': self.net.state_dict(), 'acc': _acc, 'epoch': epoch}
                 torch.save(state, self.checkpoint_path)
                 self.best_acc = _acc
                 pass
-            Tools.print('best accuracy: {:.2f}'.format(self.best_acc * 100))
+            Tools.print('Epoch: [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc * 100))
+        finally:
             pass
-
-        # Train
-        self.net.train()
-        Tools.print()
-        _learning_rate_ = self.adjust_learning_rate(epoch)
-        Tools.print('Epoch: {} {}'.format(epoch, _learning_rate_))
-
-        avg_loss_1 = AverageMeter()
-        avg_loss_2 = AverageMeter()
-        avg_loss_3 = AverageMeter()
-        for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
-            inputs, indexes = inputs.cuda(), indexes.cuda()
-            self.optimizer.zero_grad()
-
-            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
-            targets = self.produce_class(out_l2norm, indexes)
-            targets2 = self.produce_class2(out_l2norm2, indexes)
-            targets3 = self.produce_class3(out_l2norm3, indexes)
-
-            loss_1 = self.criterion(out_logits, targets)
-            loss_2 = self.criterion(out_logits2, targets2)
-            loss_3 = self.criterion(out_logits3, targets3)
-            avg_loss_1.update(loss_1.item(), inputs.size(0))
-            avg_loss_2.update(loss_2.item(), inputs.size(0))
-            avg_loss_3.update(loss_3.item(), inputs.size(0))
-            if batch_idx % 3 == 0:
-                loss_1.backward()
-            elif batch_idx % 3 == 1:
-                loss_2.backward()
-            else:
-                loss_3.backward()
-                pass
-            self.optimizer.step()
-            pass
-
-        Tools.print(
-            'Epoch: [{}/{}] '
-            'Loss 1: {avg_loss_1.val:.4f} ({avg_loss_1.avg:.4f}) '
-            'Loss 2: {avg_loss2.val:.4f} ({avg_loss2.avg:.4f}) '
-            'Loss 3: {avg_loss3.val:.4f} ({avg_loss3.avg:.4f})'.format(
-                epoch, len(self.train_loader), avg_loss_1=avg_loss_1, avg_loss2=avg_loss_2, avg_loss3=avg_loss_3))
 
         pass
 
     def train(self, start_epoch, update_epoch=3):
         for epoch in range(start_epoch, self.max_epoch):
+            Tools.print()
+            if self.learning_rate_type == 1 and self.max_epoch >= 1000 and epoch > self.max_epoch // 2:
+                self.has_l1 = True
             self._train_one_epoch(epoch, update_epoch=update_epoch)
             pass
         pass
@@ -566,62 +584,44 @@ if __name__ == '__main__':
     """
     First train auto-encoder and then train my method.
     
-    1. more sample per class 512 * 3
-    2. more sample per class 128 * 2
-    3. equal sample per class 10 * 1
-    Top 1: 80.21, 79.97, 73.95
-    
-    Top 1: 83.57(1024, 9642/2325), 83.39(128, 5814/1326), 74.89(10, 3665/1181)|(1000)
-    Top 1: 84.64(1024, 9378/2333), 84.63(128, 6258/1636), 78.44(10, 3999/1342)|(1000+750)
-    
-    Top 1: 83.13(1024, 9741/2609), 83.26(256, 7469/1976), 83.24(64, 6654/1833)|(1000)
-    Top 1: 84.80(1024, 9660/2668), 84.83(256, 6404/1465), 84.43(64, 5897/1516)|(1000+750)
-    
-    Top 1: 83.64(2048, 10896/2997), 83.59(512, 7803/1882), 83.36(128, 7152/1760)|(1000)
-    Top 1: 84.76(2048, 10470/3066), 84.87(512, 7663/2019), 84.54(128, 6924/1867)|(1000+750)
-    Top 1: 84.68(2048, 10315/2439), 84.90(512, 7516/1519), 84.49(128, 6724/1530)|(1000+750+400)
-    
-    Top 1: 82.55(8192, 15446/5330), 82.68(512, 8356/1664), 82.22(64, 6431/1406)|(1000)
-    Top 1: 83.61(8192, 13122/4676), 83.85(512, 6810/1557), 83.48(64, 6129/1639)|(1000+500)
-    Top 1: 83.62(8192, 13305/4748), 83.96(512, 7246/1714), 83.39(64, 5741/1482)|(1000+500+500)
-    Top 1: 83.97(8192, 13310/4694), 84.13(512, 6783/1585), 83.39(64, 5593/1424)|(1000+500+500+500)
-    
+    Top 1: 84.78(1024, 23651/4686), 84.84(256, 19331/4524), 85.05(64, 14853/2513)|(1000+500+500)
+    Top 1: 85.24(1024, 22236/4551), 85.36(256, 18167/4526), 85.46(64, 13803/2485)|(1000+500+500+500)
     """
 
-    # _low_dim = 2048
-    # _low_dim2 = 512
-    # _low_dim3 = 128
-
-    # _low_dim = 1024
-    # _low_dim2 = 256
-    # _low_dim3 = 64
-
-    _low_dim = 8192
-    _low_dim2 = 512
-    _low_dim3 = 64
+    # _low_dim, _low_dim2, _low_dim3 = 2048, 512, 128
+    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
+    _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
 
     _start_epoch = 0
-    _max_epoch = 500
+    _max_epoch = 1001
     _learning_rate = 0.005
     _learning_rate_type = 1
 
-    _first_epoch = 300
-    _t_epoch = 100
+    # _start_epoch = 300
+    # _max_epoch = 1000
+    # _learning_rate = 0.01
+    # _learning_rate_type = 0
 
-    _momentum = 0.5
-    _resume = False
+    _has_l1 = False
+    _linear_bias = False
 
-    # _pre_train = None
-    _pre_train = "./checkpoint/9_class_8192_norm_count_3level_512_64_lr_1000/ckpt.t7"
-    _name = "9_class_{}_norm_count_3level_{}_{}_lr_{}".format(_low_dim, _low_dim2, _low_dim3, _max_epoch)
+    _first_epoch, _t_epoch = 300, 100
+
+    _resume = True
+
+    _pre_train = None
+    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_500_no_memory_1_l1/ckpt.t7"
+    _name = "11_class_{}_3level_{}_{}_{}_no_memory_{}_l1".format(_low_dim, _low_dim2, _low_dim3,
+                                                                 _max_epoch, 0 if _linear_bias else 1)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
-    Tools.print("low_dim={} low_dim2={} low_dim3={} name={} pre_train={} momentum={} checkpoint_path={}".format(
-        _low_dim, _low_dim2, _low_dim3, _name, _pre_train, _momentum, _checkpoint_path))
+    Tools.print("low_dim={} low_dim2={} low_dim3={} name={} pre_train={} checkpoint_path={}".format(
+        _low_dim, _low_dim2, _low_dim3, _name, _pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = AttentionRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3, momentum=_momentum,
+    runner = AttentionRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
+                             linear_bias=_linear_bias, has_l1=_has_l1,
                              learning_rate=_learning_rate, learning_rate_type=_learning_rate_type,
                              max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
                              resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)

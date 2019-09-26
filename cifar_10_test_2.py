@@ -7,7 +7,6 @@ import torch.utils.data as data
 from alisuretool.Tools import Tools
 import torchvision.datasets as data_set
 import torchvision.transforms as transforms
-from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
 from cifar_9_class128_update_epoch_norm_count_3level import AttentionBasicBlock
 
 
@@ -142,14 +141,15 @@ class MultipleNonLinearClassifier(nn.Module):
 class Classifier(nn.Module):
 
     def __init__(self, low_dim, input_size_or_list, output_size=10,
-                 classifier_type=0, which_out=0, is_fine_tune=False):
+                 classifier_type=0, which_out=0, is_fine_tune=False, linear_bias=True):
         super(Classifier, self).__init__()
         assert len(low_dim) * 2 > which_out
 
         self.which_out = which_out
         self.is_fine_tune = is_fine_tune
 
-        self.attention = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], *low_dim).cuda()
+        self.attention = AttentionResNet(AttentionBasicBlock,
+                                         [2, 2, 2, 2], *low_dim, linear_bias=linear_bias).cuda()
 
         if not self.is_fine_tune:
             for p in self.parameters():
@@ -321,7 +321,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -336,7 +336,12 @@ if __name__ == '__main__':
     2: 0.8909/0.8657(0.9012/0.8605)
     
     # fine tune(can draw a compare line)
-    2: 0.9602/0.9263(0.9607/0.9255)
+    2: 0.9602/0.9263(0.9607/0.9255)  # classier_1024_2_0_0
+    2: 0.9603/0.9282(0.9596/0.9265)  # classier_1024_2_1_1
+    2: 0.9474/0.9294(0.9502/0.9275)  # classier_1024_0_1_1
+    # 0.8536, 172, 11_class_1024_3level_256_64_500_no_memory_1_l1
+    2: 0.9349  # classier_256_2_2_1
+    
     
     2: 0.8689/0.8790(0.8733/0.8779)  # 0.8358, 870, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
     2: 0.8804/0.8787(0.8804/0.8734)  # 0.8381, 898, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
@@ -347,24 +352,65 @@ if __name__ == '__main__':
     
     2: 0.8919/0.8774(0.8928/0.8765)  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_0_0
     2: 0.8909/0.8782(0.8924/0.8761)  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_1_0
+    
+    # 0.8469, 444, 9_class_1024_norm_count_3level_256_64_lr_500_no_memory
+    2: 0.8888/0.8771(0.8831/0.8728), classier_1024_2_0_0
+    
+    # 0.8505, 490, 11_class_1024_3level_256_64_500_no_memory_1_l1
+    2: 0.8819 classier_1024_2_0_0
+    2: 0.8830 classier_1024_2_1_0
+    2: 0.8833 classier_256_2_2_0
+    2: 0.8822 classier_256_2_3_0
+    2: 0.8823 classier_64_2_4_0
+    2: 0.8812 classier_64_2_5_0
+    
+    # 0.8536, 172, 11_class_1024_3level_256_64_500_no_memory_1_l1
+    2: 0.8833 classier_1024_2_0_0
+    2: 0.8844 classier_256_2_2_0
+    
+    # 0.8546, 317, 11_class_1024_3level_256_64_500_no_memory_1_l1
+    2: 0.8858 classier_1024_2_0_0
+    2: 0.8853 classier_1024_2_1_0
+    2: 0.8867 classier_256_2_2_0
+    2: 0.8878 classier_256_2_3_0
+    2: 0.8843 classier_64_2_5_0
+    2: 0.8844 classier_64_2_4_0
     """
 
     _which = 0
-    _is_l2norm = True
+    _is_l2norm = False
     _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
 
-    _which_out = _which * 2 + (1 if _is_l2norm else 0)
+    # 1
     # _low_dim = [2048, 512, 128]
     # _name = "9_class_2048_norm_count_3level_512_128_lr_1000"
+    # from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
+
+    # 2
+    # _low_dim = [1024, 256, 64]
+    # _name = "9_class_1024_norm_count_3level_256_64_lr_1000"
+    # from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
+
+    # 3
+    # _low_dim = [1024, 256, 64]
+    # _name = "9_class_1024_norm_count_3level_256_64_lr_500_no_memory"
+    # from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
+
+    # 4
     _low_dim = [1024, 256, 64]
-    _name = "9_class_1024_norm_count_3level_256_64_lr_1000"
+    _name = "11_class_1024_3level_256_64_500_no_memory_1_l1"
+    from cifar_11_3level_no_memory_l2 import AttentionResNet
+
+    _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
 
     _start_epoch = 0  # train epoch
     _max_epoch = 200
+    _linear_bias = False
 
     Tools.print()
+    # _pre_train_path = None
     _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
@@ -372,7 +418,7 @@ if __name__ == '__main__':
 
     _net = Classifier(input_size_or_list=_input_size if _classifier_type == 0 else [_input_size, 512, 256],
                       low_dim=_low_dim, classifier_type=_classifier_type,
-                      which_out=_which_out, is_fine_tune=_is_fine_tune)
+                      which_out=_which_out, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
 
