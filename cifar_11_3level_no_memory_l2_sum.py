@@ -27,11 +27,11 @@ class Normalize(nn.Module):
     pass
 
 
-class AttentionBasicBlock(nn.Module):
+class HCBasicBlock(nn.Module):
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1):
-        super(AttentionBasicBlock, self).__init__()
+        super(HCBasicBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
@@ -55,10 +55,10 @@ class AttentionBasicBlock(nn.Module):
     pass
 
 
-class AttentionResNet(nn.Module):
+class HCResNet(nn.Module):
 
     def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10, linear_bias=True):
-        super(AttentionResNet, self).__init__()
+        super(HCResNet, self).__init__()
         self.in_planes = 64
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -148,7 +148,7 @@ class CIFAR10Instance(datasets.CIFAR10):
         return img, target, index
 
     @staticmethod
-    def data(data_root):
+    def data(data_root, batch_size=128):
         Tools.print('==> Preparing data..')
         transform_train = transforms.Compose([
             transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
@@ -165,10 +165,10 @@ class CIFAR10Instance(datasets.CIFAR10):
         ])
 
         train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size=100, shuffle=True, num_workers=2)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
 
         test_set = CIFAR10Instance(root=data_root, train=False, download=True, transform=transform_test)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=100, shuffle=False, num_workers=2)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
 
         class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
@@ -267,17 +267,17 @@ class KNN(object):
     pass
 
 
-class AttentionLoss(nn.Module):
+class HCLoss(nn.Module):
 
     def __init__(self):
-        super(AttentionLoss, self).__init__()
+        super(HCLoss, self).__init__()
         self.criterion_no = nn.CrossEntropyLoss()
         pass
 
-    def forward(self, out, targets, param):
+    def forward(self, out, targets, param, l1_lambda=0.1):
         loss_1 = self.criterion_no(out, targets)
         loss_2 = torch.norm(param, 1) / out.size()[-1]
-        return loss_1 + loss_2, loss_1, loss_2
+        return loss_1 + l1_lambda * loss_2, loss_1, loss_2
 
     pass
 
@@ -327,17 +327,19 @@ class ProduceClass(object):
     pass
 
 
-class AttentionRunner(object):
+class HCRunner(object):
 
-    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, is_loss_sum=False,
-                 learning_rate=0.03, learning_rate_type=0, linear_bias=True, has_l1=False,
-                 max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
-                 checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
+    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, batch_size=128,
+                 is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1,
+                 learning_rate=0.03, learning_rate_type=0,
+                 linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200,
+                 resume=False, checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
         self.resume = resume
         self.pre_train = pre_train
         self.data_root = data_root
+        self.batch_size = batch_size
 
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
@@ -348,6 +350,8 @@ class AttentionRunner(object):
         self.first_epoch = first_epoch
         self.linear_bias = linear_bias
         self.has_l1 = has_l1
+        self.l1_lambda = l1_lambda
+        self.is_adjust_lambda = is_adjust_lambda
         self.is_loss_sum = is_loss_sum
         self.learning_rate_type = learning_rate_type
         self.adjust_learning_rate = self._adjust_learning_rate \
@@ -356,11 +360,11 @@ class AttentionRunner(object):
         self.best_acc = 0
 
         self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
-            self.data_root)
+            self.data_root, batch_size=self.batch_size)
         self.train_num = self.train_set.__len__()
 
-        self.net = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2],
-                                   self.low_dim, self.low_dim2, self.low_dim3, linear_bias=linear_bias).cuda()
+        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim,
+                            self.low_dim2, self.low_dim3, linear_bias=linear_bias).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
@@ -368,7 +372,7 @@ class AttentionRunner(object):
         self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=3)
         self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=2)
         self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=1)
-        self.criterion = AttentionLoss().cuda()  # define loss function
+        self.criterion = HCLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
 
@@ -386,15 +390,15 @@ class AttentionRunner(object):
         elif epoch < first_epoch + t_epoch * 2:  # 400-500
             learning_rate = _get_lr(self.learning_rate / 1.0, epoch - first_epoch - t_epoch * 1)
         elif epoch < first_epoch + t_epoch * 3:  # 500-600
-            learning_rate = _get_lr(self.learning_rate / 3.0, epoch - first_epoch - t_epoch * 2)
+            learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 2)
         elif epoch < first_epoch + t_epoch * 4:  # 600-700
-            learning_rate = _get_lr(self.learning_rate / 3.0, epoch - first_epoch - t_epoch * 3)
+            learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 3)
         elif epoch < first_epoch + t_epoch * 5:  # 700-800
             learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 4)
         elif epoch < first_epoch + t_epoch * 6:  # 800-900
             learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 5)
         else:  # 900-1000
-            learning_rate = _get_lr(self.learning_rate / 30., epoch - first_epoch - t_epoch * 6)
+            learning_rate = _get_lr(self.learning_rate / 20., epoch - first_epoch - t_epoch * 6)
             pass
 
         for param_group in self.optimizer.param_groups:
@@ -407,19 +411,44 @@ class AttentionRunner(object):
         if epoch < 100:
             learning_rate = self.learning_rate
         elif epoch < 200:
-            learning_rate = self.learning_rate * 0.5
+            learning_rate = self.learning_rate / 5.0
         elif epoch < 300:
-            learning_rate = self.learning_rate * 0.1
+            learning_rate = self.learning_rate / 10.0
         elif epoch < 400:
-            learning_rate = self.learning_rate * 0.05
+            learning_rate = self.learning_rate / 20.0
         else:
-            learning_rate = self.learning_rate * 0.01
+            learning_rate = self.learning_rate / 40.0
             pass
 
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = learning_rate
             pass
         return learning_rate
+
+    def _adjust_l1_lambda(self, epoch):
+        if not self.is_adjust_lambda:
+            return self.l1_lambda
+
+        t_epoch = self.t_epoch
+        first_epoch = self.first_epoch
+        if epoch < first_epoch + self.t_epoch * 0:  # 0-200
+            l1_lambda = 0.0
+        elif epoch < first_epoch + t_epoch * 1:  # 200-400
+            l1_lambda = 0.0
+        elif epoch < first_epoch + t_epoch * 2:  # 400-600
+            l1_lambda = 0.0
+        elif epoch < first_epoch + t_epoch * 3:  # 600-800
+            l1_lambda = 0.0
+        elif epoch < first_epoch + t_epoch * 4:  # 800-1000
+            l1_lambda = 0.0
+        elif epoch < first_epoch + t_epoch * 5:  # 1000-1200
+            l1_lambda = 1.0
+        elif epoch < first_epoch + t_epoch * 6:  # 1200-1400
+            l1_lambda = 1.0
+        else:  # 1400-1600
+            l1_lambda = 1.0
+            pass
+        return l1_lambda
 
     def _load_model(self, net):
         # Load PreTrain
@@ -466,7 +495,7 @@ class AttentionRunner(object):
                     self.produce_class3.cal_label(out_l2norm3, indexes)
                     pass
                 Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{}".format(
-                    epoch, self.produce_class2.count, self.produce_class2.count_2,
+                    epoch, self.produce_class.count, self.produce_class.count_2,
                     self.produce_class2.count, self.produce_class2.count_2,
                     self.produce_class3.count, self.produce_class3.count_2))
                 pass
@@ -477,19 +506,12 @@ class AttentionRunner(object):
         try:
             self.net.train()
             _learning_rate_ = self.adjust_learning_rate(epoch)
+            _l1_lambda_ = self._adjust_l1_lambda(epoch)
             Tools.print('Epoch: {} {}'.format(epoch, _learning_rate_))
 
-            avg_loss_1 = AverageMeter()
-            avg_loss_1_1 = AverageMeter()
-            avg_loss_1_2 = AverageMeter()
-
-            avg_loss_2 = AverageMeter()
-            avg_loss_2_1 = AverageMeter()
-            avg_loss_2_2 = AverageMeter()
-
-            avg_loss_3 = AverageMeter()
-            avg_loss_3_1 = AverageMeter()
-            avg_loss_3_2 = AverageMeter()
+            avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
+            avg_loss_2, avg_loss_2_1, avg_loss_2_2 = AverageMeter(), AverageMeter(), AverageMeter()
+            avg_loss_3, avg_loss_3_1, avg_loss_3_2 = AverageMeter(), AverageMeter(), AverageMeter()
 
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
@@ -502,24 +524,16 @@ class AttentionRunner(object):
                 targets3 = self.produce_class3.get_label(indexes)
 
                 params = [_ for _ in self.net.module.parameters()]
-                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3])
-                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2])
-                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1])
-
-                # Tools.print('Epoch: [{}/{}] {}-{}-{} / {}-{}-{} / {}-{}-{}'.format(
-                #     epoch, len(self.train_loader),
-                #     loss_1.item(), loss_1_1.item(), loss_1_2.item(),
-                #     loss_2.item(), loss_2_1.item(), loss_2_2.item(),
-                #     loss_3.item(), loss_3_1.item(), loss_3_2.item()))
+                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3], _l1_lambda_)
+                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2], _l1_lambda_)
+                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1], _l1_lambda_)
 
                 avg_loss_1.update(loss_1.item(), inputs.size(0))
                 avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))
                 avg_loss_1_2.update(loss_1_2.item(), inputs.size(0))
-
                 avg_loss_2.update(loss_2.item(), inputs.size(0))
                 avg_loss_2_1.update(loss_2_1.item(), inputs.size(0))
                 avg_loss_2_2.update(loss_2_2.item(), inputs.size(0))
-
                 avg_loss_3.update(loss_3.item(), inputs.size(0))
                 avg_loss_3_1.update(loss_3_1.item(), inputs.size(0))
                 avg_loss_3_2.update(loss_3_2.item(), inputs.size(0))
@@ -564,8 +578,6 @@ class AttentionRunner(object):
     def train(self, start_epoch, update_epoch=3):
         for epoch in range(start_epoch, self.max_epoch):
             Tools.print()
-            if self.learning_rate_type == 1 and self.max_epoch >= 1000 and epoch > self.max_epoch // 2:
-                self.has_l1 = True
             self._train_one_epoch(epoch, update_epoch=update_epoch)
             pass
         pass
@@ -577,57 +589,66 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    First train auto-encoder and then train my method.
+    86.14(1024, 13462/1716) 85.95(256, 13462/1716) 85.99(64, 12505/2035)
+    85.93(1024, 13462/1716) 85.99(256, 13462/1716) 86.20(64, 12505/2035)
     
-    Top 1: 84.78(1024, 23651/4686), 84.84(256, 19331/4524), 85.05(64, 14853/2513)|(1000+500+500)
-    Top 1: 85.24(1024, 22236/4551), 85.36(256, 18167/4526), 85.46(64, 13803/2485)|(1000+500+500+500)
+    85.01(8192, 20509/4473) 84.89(1024, 17731/2806) 84.49(128, 15503/2244)
     """
 
-    # _low_dim, _low_dim2, _low_dim3 = 2048, 512, 128
-    _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-    # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
+    # _start_epoch = 0
+    # _max_epoch = 1000
+    # _learning_rate = 0.01
+    # _learning_rate_type = 0
+    # _first_epoch, _t_epoch = 300, 100
+    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
     # _start_epoch = 0
-    # _max_epoch = 1001
+    # _max_epoch = 1000
     # _learning_rate = 0.005
     # _learning_rate_type = 1
+    # _first_epoch, _t_epoch = 300, 100
+    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
     _start_epoch = 0
-    _max_epoch = 1000
+    _max_epoch = 1600
     _learning_rate = 0.01
     _learning_rate_type = 0
+    _first_epoch, _t_epoch = 200, 200
+    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
+    _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
 
-    _has_l1 = False
-    _linear_bias = False
+    _batch_size = 512
     _is_loss_sum = True
-
-    _first_epoch, _t_epoch = 300, 100
-
+    _has_l1 = True
+    _l1_lambda = 0.1
+    _is_adjust_lambda = False
+    _linear_bias = False
     _resume = False
-
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_500_no_memory_1_l1/ckpt.t7"
+    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1000_no_memory_1_l1_sum/ckpt.t7"
     _name = "11_class_{}_3level_{}_{}_{}_no_memory_{}_l1_sum".format(_low_dim, _low_dim2, _low_dim3,
                                                                      _max_epoch, 0 if _linear_bias else 1)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
-    Tools.print("low_dim={} low_dim2={} low_dim3={} name={} pre_train={} checkpoint_path={}".format(
-        _low_dim, _low_dim2, _low_dim3, _name, _pre_train, _checkpoint_path))
+    Tools.print("name={}".format(_name))
+    Tools.print("low_dim={} low_dim2={} low_dim3={}".format(_low_dim, _low_dim2, _low_dim3))
+    Tools.print("learning_rate={} batch_size={}".format(_learning_rate, _batch_size))
+    Tools.print("has_l1={} l1_lambda={}".format(_has_l1, _l1_lambda))
+    Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = AttentionRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
-                             linear_bias=_linear_bias, has_l1=_has_l1, is_loss_sum=_is_loss_sum,
-                             learning_rate=_learning_rate, learning_rate_type=_learning_rate_type,
-                             max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
-                             resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
-
+    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
+                      linear_bias=_linear_bias, has_l1=_has_l1,
+                      l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
+                      is_loss_sum=_is_loss_sum, batch_size=_batch_size,
+                      learning_rate=_learning_rate, learning_rate_type=_learning_rate_type,
+                      max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
+                      resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
     Tools.print()
     acc = runner.test()
     Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
-
     runner.train(start_epoch=_start_epoch, update_epoch=1)
-
     Tools.print()
     acc = runner.test(loader_n=2)
     Tools.print('final accuracy: {:.2f}'.format(acc * 100))

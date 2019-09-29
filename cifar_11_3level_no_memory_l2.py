@@ -465,7 +465,7 @@ class AttentionRunner(object):
                     self.produce_class3.cal_label(out_l2norm3, indexes)
                     pass
                 Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{}".format(
-                    epoch, self.produce_class2.count, self.produce_class2.count_2,
+                    epoch, self.produce_class.count, self.produce_class.count_2,
                     self.produce_class2.count, self.produce_class2.count_2,
                     self.produce_class3.count, self.produce_class3.count_2))
                 pass
@@ -569,8 +569,6 @@ class AttentionRunner(object):
     def train(self, start_epoch, update_epoch=3):
         for epoch in range(start_epoch, self.max_epoch):
             Tools.print()
-            if self.learning_rate_type == 1 and self.max_epoch >= 1000 and epoch > self.max_epoch // 2:
-                self.has_l1 = True
             self._train_one_epoch(epoch, update_epoch=update_epoch)
             pass
         pass
@@ -579,13 +577,15 @@ class AttentionRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     First train auto-encoder and then train my method.
     
     Top 1: 84.78(1024, 23651/4686), 84.84(256, 19331/4524), 85.05(64, 14853/2513)|(1000+500+500)
     Top 1: 85.24(1024, 22236/4551), 85.36(256, 18167/4526), 85.46(64, 13803/2485)|(1000+500+500+500)
+    
+    Top 1: 84.19(8192, 29617/6894), 84.05(1024, 23748/3840), 84.13(128, 16519/1984)|(1000+500+500)
     """
 
     # _low_dim, _low_dim2, _low_dim3 = 2048, 512, 128
@@ -593,8 +593,8 @@ if __name__ == '__main__':
     _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
 
     _start_epoch = 0
-    _max_epoch = 1001
-    _learning_rate = 0.005
+    _max_epoch = 1000
+    _learning_rate = 0.001
     _learning_rate_type = 1
 
     # _start_epoch = 300
@@ -602,7 +602,7 @@ if __name__ == '__main__':
     # _learning_rate = 0.01
     # _learning_rate_type = 0
 
-    _has_l1 = False
+    _has_l1 = True
     _linear_bias = False
 
     _first_epoch, _t_epoch = 300, 100

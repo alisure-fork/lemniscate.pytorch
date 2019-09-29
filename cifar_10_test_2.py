@@ -236,13 +236,6 @@ class ClassierRunner(object):
                 best_epoch = checkpoint['epoch']
                 Tools.print("{} {}".format(best_acc, best_epoch))
             net.load_state_dict(checkpoint_value, strict=False)
-
-            # fixed parameter
-            # for k, v in net.named_parameters():
-            #     if 'module.linear.' not in k:
-            #         v.requires_grad = False  # 固定参数
-            #         pass
-            #     pass
             pass
 
         # Load checkpoint.
@@ -321,7 +314,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -342,19 +335,18 @@ if __name__ == '__main__':
     # 0.8536, 172, 11_class_1024_3level_256_64_500_no_memory_1_l1
     2: 0.9349  # classier_256_2_2_1
     
+    2: 0.8790  # 0.8358, 870, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
+    2: 0.8787  # 0.8381, 898, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
+    2: 0.8793  # 0.8406, 984, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
+    2: 0.8770  # 0.8411, 977, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_1_0
+    2: 0.8713  # 0.8386, 927, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_256_2_2_0
+    2: 0.8711  # 0.8386, 927, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_64_2_4_0
     
-    2: 0.8689/0.8790(0.8733/0.8779)  # 0.8358, 870, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
-    2: 0.8804/0.8787(0.8804/0.8734)  # 0.8381, 898, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
-    2: 0.8756/0.8793(0.8830/0.8768)  # 0.8406, 984, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
-    2: 0.8784/0.8770(0.8790/0.8759)  # 0.8411, 977, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_1_0
-    2: 0.8674/0.8713(0.8685/0.8689)  # 0.8386, 927, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_256_2_2_0
-    2: 0.8613/0.8711(0.8617/0.8693)  # 0.8386, 927, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_64_2_4_0
-    
-    2: 0.8919/0.8774(0.8928/0.8765)  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_0_0
-    2: 0.8909/0.8782(0.8924/0.8761)  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_1_0
+    2: 0.8774  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_0_0
+    2: 0.8782  # 0.8411, 977, 9_class_2048_norm_count_3level_512_128_lr_1000, classier_2048_2_1_0
     
     # 0.8469, 444, 9_class_1024_norm_count_3level_256_64_lr_500_no_memory
-    2: 0.8888/0.8771(0.8831/0.8728), classier_1024_2_0_0
+    2: 0.8771, classier_1024_2_0_0
     
     # 0.8505, 490, 11_class_1024_3level_256_64_500_no_memory_1_l1
     2: 0.8819 classier_1024_2_0_0
@@ -375,6 +367,22 @@ if __name__ == '__main__':
     2: 0.8878 classier_256_2_3_0
     2: 0.8843 classier_64_2_5_0
     2: 0.8844 classier_64_2_4_0
+    
+    # 0.8599, 958, 11_class_1024_3level_256_64_1000_no_memory_1_l1_sum
+    2: 0.8862 classier_1024_2_0_0
+    2: 0.8875 classier_1024_2_1_0
+    2: 0.8861 classier_256_2_2_0
+    2: 0.8847 classier_256_2_3_0
+    2: 0.8870 classier_64_2_4_0
+    2: 0.8848 classier_64_2_5_0
+    
+    # 0.862, 694, 11_class_1024_3level_256_64_1000_no_memory_1_l1_sum
+    2: 0.8890 classier_1024_2_0_0
+    2: 0.8899 classier_1024_2_1_0
+    2: 0.8881 classier_256_2_2_0
+    2: 0.8874 classier_256_2_3_0
+    2: 0.8843 classier_64_2_4_0
+    2: 0.8844 classier_64_2_5_0
     """
 
     _which = 0
@@ -398,8 +406,13 @@ if __name__ == '__main__':
     # from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
 
     # 4
+    # _low_dim = [1024, 256, 64]
+    # _name = "11_class_1024_3level_256_64_500_no_memory_1_l1"
+    # from cifar_11_3level_no_memory_l2 import AttentionResNet
+
+    # 5
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_3level_256_64_500_no_memory_1_l1"
+    _name = "11_class_1024_3level_256_64_1000_no_memory_1_l1_sum"
     from cifar_11_3level_no_memory_l2 import AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
@@ -409,11 +422,12 @@ if __name__ == '__main__':
     _max_epoch = 200
     _linear_bias = False
 
-    Tools.print()
     # _pre_train_path = None
     _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
+
+    Tools.print()
     Tools.print("input_size={} name={} classier={}".format(_input_size, _name, _checkpoint_path_classier))
 
     _net = Classifier(input_size_or_list=_input_size if _classifier_type == 0 else [_input_size, 512, 256],
