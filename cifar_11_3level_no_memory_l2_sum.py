@@ -385,20 +385,34 @@ class HCRunner(object):
         first_epoch = self.first_epoch
         if epoch < first_epoch + self.t_epoch * 0:  # 0-200
             learning_rate = self.learning_rate
-        elif epoch < first_epoch + t_epoch * 1:  # 200-400
-            learning_rate = _get_lr(self.learning_rate / 1.0, epoch - first_epoch - t_epoch * 0)
-        elif epoch < first_epoch + t_epoch * 2:  # 400-600
-            learning_rate = _get_lr(self.learning_rate / 1.0, epoch - first_epoch - t_epoch * 1)
-        elif epoch < first_epoch + t_epoch * 3:  # 600-800
-            learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 2)
-        elif epoch < first_epoch + t_epoch * 4:  # 800-1000
-            learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 3)
-        elif epoch < first_epoch + t_epoch * 5:  # 1000-1200
-            learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 4)
-        elif epoch < first_epoch + t_epoch * 6:  # 1200-1400
-            learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 5)
-        else:  # 1400-1600
-            learning_rate = _get_lr(self.learning_rate / 50., epoch - first_epoch - t_epoch * 6)
+        elif epoch < first_epoch + t_epoch * 1:  # 200-300
+            learning_rate = self.learning_rate / 2
+        elif epoch < first_epoch + t_epoch * 2:  # 300-400
+            learning_rate = self.learning_rate / 4
+        elif epoch < first_epoch + t_epoch * 3:  # 400-500
+            learning_rate = _get_lr(self.learning_rate / 2.0, epoch - first_epoch - t_epoch * 2)
+        elif epoch < first_epoch + t_epoch * 4:  # 500-600
+            learning_rate = _get_lr(self.learning_rate / 2.0, epoch - first_epoch - t_epoch * 3)
+        elif epoch < first_epoch + t_epoch * 5:  # 600-700
+            learning_rate = _get_lr(self.learning_rate / 4.0, epoch - first_epoch - t_epoch * 4)
+        elif epoch < first_epoch + t_epoch * 6:  # 700-800
+            learning_rate = _get_lr(self.learning_rate / 4.0, epoch - first_epoch - t_epoch * 5)
+        elif epoch < first_epoch + t_epoch * 7:  # 800-900
+            learning_rate = _get_lr(self.learning_rate / 8.0, epoch - first_epoch - t_epoch * 6)
+        elif epoch < first_epoch + t_epoch * 8:  # 900-1000
+            learning_rate = _get_lr(self.learning_rate / 8.0, epoch - first_epoch - t_epoch * 7)
+        elif epoch < first_epoch + t_epoch * 9:  # 1000-1100
+            learning_rate = _get_lr(self.learning_rate / 16., epoch - first_epoch - t_epoch * 8)
+        elif epoch < first_epoch + t_epoch * 10:  # 1100-1200
+            learning_rate = _get_lr(self.learning_rate / 16., epoch - first_epoch - t_epoch * 9)
+        elif epoch < first_epoch + t_epoch * 11:  # 1200-1300
+            learning_rate = _get_lr(self.learning_rate / 32., epoch - first_epoch - t_epoch * 10)
+        elif epoch < first_epoch + t_epoch * 12:  # 1300-1400
+            learning_rate = _get_lr(self.learning_rate / 32., epoch - first_epoch - t_epoch * 11)
+        elif epoch < first_epoch + t_epoch * 13:  # 1400-1500
+            learning_rate = _get_lr(self.learning_rate / 64., epoch - first_epoch - t_epoch * 12)
+        else:  # 1500-1600
+            learning_rate = _get_lr(self.learning_rate / 64., epoch - first_epoch - t_epoch * 13)
             pass
 
         for param_group in self.optimizer.param_groups:
@@ -613,12 +627,12 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _learning_rate_type = 0
-    _first_epoch, _t_epoch = 200, 200
+    _first_epoch, _t_epoch = 200, 100
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
     _is_adjust_lambda = True
 
-    _batch_size = 512
+    _batch_size = 128
     _is_loss_sum = True
     _has_l1 = True
     _l1_lambda = 0.5
