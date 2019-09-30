@@ -383,22 +383,22 @@ class HCRunner(object):
 
         t_epoch = self.t_epoch
         first_epoch = self.first_epoch
-        if epoch < first_epoch + self.t_epoch * 0:  # 0-300
+        if epoch < first_epoch + self.t_epoch * 0:  # 0-200
             learning_rate = self.learning_rate
-        elif epoch < first_epoch + t_epoch * 1:  # 300-400
+        elif epoch < first_epoch + t_epoch * 1:  # 200-400
             learning_rate = _get_lr(self.learning_rate / 1.0, epoch - first_epoch - t_epoch * 0)
-        elif epoch < first_epoch + t_epoch * 2:  # 400-500
+        elif epoch < first_epoch + t_epoch * 2:  # 400-600
             learning_rate = _get_lr(self.learning_rate / 1.0, epoch - first_epoch - t_epoch * 1)
-        elif epoch < first_epoch + t_epoch * 3:  # 500-600
+        elif epoch < first_epoch + t_epoch * 3:  # 600-800
             learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 2)
-        elif epoch < first_epoch + t_epoch * 4:  # 600-700
+        elif epoch < first_epoch + t_epoch * 4:  # 800-1000
             learning_rate = _get_lr(self.learning_rate / 5.0, epoch - first_epoch - t_epoch * 3)
-        elif epoch < first_epoch + t_epoch * 5:  # 700-800
+        elif epoch < first_epoch + t_epoch * 5:  # 1000-1200
             learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 4)
-        elif epoch < first_epoch + t_epoch * 6:  # 800-900
+        elif epoch < first_epoch + t_epoch * 6:  # 1200-1400
             learning_rate = _get_lr(self.learning_rate / 10., epoch - first_epoch - t_epoch * 5)
-        else:  # 900-1000
-            learning_rate = _get_lr(self.learning_rate / 20., epoch - first_epoch - t_epoch * 6)
+        else:  # 1400-1600
+            learning_rate = _get_lr(self.learning_rate / 50., epoch - first_epoch - t_epoch * 6)
             pass
 
         for param_group in self.optimizer.param_groups:
@@ -442,11 +442,11 @@ class HCRunner(object):
         elif epoch < first_epoch + t_epoch * 4:  # 800-1000
             l1_lambda = 0.0
         elif epoch < first_epoch + t_epoch * 5:  # 1000-1200
-            l1_lambda = 1.0
+            l1_lambda = self.l1_lambda
         elif epoch < first_epoch + t_epoch * 6:  # 1200-1400
-            l1_lambda = 1.0
+            l1_lambda = self.l1_lambda
         else:  # 1400-1600
-            l1_lambda = 1.0
+            l1_lambda = self.l1_lambda
             pass
         return l1_lambda
 
@@ -507,7 +507,7 @@ class HCRunner(object):
             self.net.train()
             _learning_rate_ = self.adjust_learning_rate(epoch)
             _l1_lambda_ = self._adjust_l1_lambda(epoch)
-            Tools.print('Epoch: {} {}'.format(epoch, _learning_rate_))
+            Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
 
             avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_2, avg_loss_2_1, avg_loss_2_2 = AverageMeter(), AverageMeter(), AverageMeter()
@@ -616,25 +616,26 @@ if __name__ == '__main__':
     _first_epoch, _t_epoch = 200, 200
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
+    _is_adjust_lambda = True
 
     _batch_size = 512
     _is_loss_sum = True
     _has_l1 = True
-    _l1_lambda = 0.1
-    _is_adjust_lambda = False
+    _l1_lambda = 0.5
+    # _is_adjust_lambda = True
     _linear_bias = False
     _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1000_no_memory_1_l1_sum/ckpt.t7"
-    _name = "11_class_{}_3level_{}_{}_{}_no_memory_{}_l1_sum".format(_low_dim, _low_dim2, _low_dim3,
-                                                                     _max_epoch, 0 if _linear_bias else 1)
+    _name = "11_class_{}_3level_{}_{}_{}_no_memory_{}_l1_sum_{}".format(
+        _low_dim, _low_dim2, _low_dim3, _max_epoch, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
     Tools.print("name={}".format(_name))
     Tools.print("low_dim={} low_dim2={} low_dim3={}".format(_low_dim, _low_dim2, _low_dim3))
     Tools.print("learning_rate={} batch_size={}".format(_learning_rate, _batch_size))
-    Tools.print("has_l1={} l1_lambda={}".format(_has_l1, _l1_lambda))
+    Tools.print("has_l1={} l1_lambda={} is_adjust_lambda={}".format(_has_l1, _l1_lambda, _is_adjust_lambda))
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
