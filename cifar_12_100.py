@@ -132,7 +132,15 @@ class AverageMeter(object):
 class CIFAR100Instance(datasets.CIFAR100):
 
     def __getitem__(self, index):
-        img, target = self.data[index], self.targets[index]
+        if hasattr(self, "data") and hasattr(self, "targets"):
+            img, target = self.data[index], self.targets[index]
+        else:
+            if self.train:
+                img, target = self.train_data[index], self.train_labels[index]
+            else:
+                img, target = self.test_data[index], self.test_labels[index]
+            pass
+
         img = Image.fromarray(img)
 
         if self.transform is not None:
@@ -180,7 +188,10 @@ class KNN(object):
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
         out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
-        train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
+        if hasattr(train_loader.dataset, "train_labels"):
+            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
+        else:
+            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
@@ -597,22 +608,8 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    86.14(1024, 13462/1716) 85.95(256, 13462/1716) 85.99(64, 12505/2035)
+    .(1024, 13462/1716) .(256, 13462/1716) .(64, 12505/2035)
     """
-
-    # _start_epoch = 0
-    # _max_epoch = 1000
-    # _learning_rate = 0.01
-    # _learning_rate_type = 0
-    # _first_epoch, _t_epoch = 300, 100
-    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-
-    # _start_epoch = 0
-    # _max_epoch = 1000
-    # _learning_rate = 0.005
-    # _learning_rate_type = 1
-    # _first_epoch, _t_epoch = 300, 100
-    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
     _start_epoch = 0
     _max_epoch = 1600
@@ -620,10 +617,9 @@ if __name__ == '__main__':
     _learning_rate_type = 0
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-    # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
     _is_adjust_lambda = True
 
-    _batch_size = 32
+    _batch_size = 128
     _is_loss_sum = True
     _has_l1 = True
     _l1_lambda = 0.5

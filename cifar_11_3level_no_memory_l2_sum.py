@@ -132,16 +132,19 @@ class AverageMeter(object):
 class CIFAR10Instance(datasets.CIFAR10):
 
     def __getitem__(self, index):
-        if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+        if hasattr(self, "data") and hasattr(self, "targets"):
+            img, target = self.data[index], self.targets[index]
         else:
-            img, target = self.test_data[index], self.test_labels[index]
+            if self.train:
+                img, target = self.train_data[index], self.train_labels[index]
+            else:
+                img, target = self.test_data[index], self.test_labels[index]
+            pass
 
         img = Image.fromarray(img)
 
         if self.transform is not None:
             img = self.transform(img)
-
         if self.target_transform is not None:
             target = self.target_transform(target)
 
@@ -150,6 +153,7 @@ class CIFAR10Instance(datasets.CIFAR10):
     @staticmethod
     def data(data_root, batch_size=128):
         Tools.print('==> Preparing data..')
+
         transform_train = transforms.Compose([
             transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
@@ -186,7 +190,10 @@ class KNN(object):
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
         out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
-        train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
+        if hasattr(train_loader.dataset, "train_labels"):
+            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
+        else:
+            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
@@ -606,7 +613,8 @@ if __name__ == '__main__':
     86.14(1024, 13462/1716) 85.95(256, 13462/1716) 85.99(64, 12505/2035)
     85.93(1024, 13462/1716) 85.99(256, 13462/1716) 86.20(64, 12505/2035)
     
-    85.01(8192, 20509/4473) 84.89(1024, 17731/2806) 84.49(128, 15503/2244)
+    # 11_class_1024_3level_256_128_64_no_memory_1_l1_sum_1
+    85.75(1024, 15723/3209) 85.64(256, 12264/2661) 85.63(64, 10684/2315)
     """
 
     # _start_epoch = 0
@@ -628,8 +636,8 @@ if __name__ == '__main__':
     _learning_rate = 0.01
     _learning_rate_type = 0
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-    _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
+    _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
+    # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
     _is_adjust_lambda = True
 
     _batch_size = 128
