@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 import shutil
 import time
 
@@ -16,13 +15,12 @@ import torchvision.transforms as transforms
 
 import datasets
 import models
-import math
 
 from lib.NCEAverage import NCEAverage
 from lib.LinearAverage import LinearAverage
 from lib.NCECriterion import NCECriterion
 from lib.utils import AverageMeter
-from test import NN, kNN
+from history.test import NN, kNN
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")

@@ -8,8 +8,8 @@ import torch.utils.data as data
 from alisuretool.Tools import Tools
 import torchvision.datasets as data_set
 import torchvision.transforms as transforms
-from cifar_11_3level_no_memory_l2 import AttentionResNet
-from cifar_11_3level_no_memory_l2 import AttentionBasicBlock
+from cifar_9_class128_update_epoch_norm_count_3level import AttentionResNet
+from cifar_9_class128_update_epoch_norm_count_3level import AttentionBasicBlock
 
 
 class CIFAR10Instance(data_set.CIFAR10):

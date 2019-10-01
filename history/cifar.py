@@ -6,7 +6,7 @@ import models
 import argparse
 import datasets
 import torch.nn as nn
-from test import NN, kNN
+from history.test import kNN
 import torch.optim as optim
 from lib.utils import AverageMeter
 import torch.backends.cudnn as cudnn
