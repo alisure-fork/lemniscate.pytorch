@@ -627,8 +627,8 @@ if __name__ == '__main__':
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/12_class_1024_256_64_1000_no_memory_1_l1_sum/ckpt.t7"
-    _name = "12_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}".format(
+    # _pre_train = "./checkpoint/12_class100_1024_256_64_1600_no_128_1_l1_sum_1/ckpt.t7"
+    _name = "12_class100_{}_{}_{}_{}_no_{}_{}_l1_sum_{}".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
