@@ -447,17 +447,17 @@ class HCRunner(object):
         first_epoch = self.first_epoch
         if epoch < first_epoch + self.t_epoch * 0:  # 0-200
             l1_lambda = 0.0
-        elif epoch < first_epoch + t_epoch * 1:  # 200-400
+        elif epoch < first_epoch + t_epoch * 2:  # 200-400
             l1_lambda = 0.0
-        elif epoch < first_epoch + t_epoch * 2:  # 400-600
+        elif epoch < first_epoch + t_epoch * 4:  # 400-600
             l1_lambda = 0.0
-        elif epoch < first_epoch + t_epoch * 3:  # 600-800
+        elif epoch < first_epoch + t_epoch * 6:  # 600-800
             l1_lambda = 0.0
-        elif epoch < first_epoch + t_epoch * 4:  # 800-1000
+        elif epoch < first_epoch + t_epoch * 8:  # 800-1000
             l1_lambda = 0.0
-        elif epoch < first_epoch + t_epoch * 5:  # 1000-1200
+        elif epoch < first_epoch + t_epoch * 10:  # 1000-1200
             l1_lambda = self.l1_lambda
-        elif epoch < first_epoch + t_epoch * 6:  # 1200-1400
+        elif epoch < first_epoch + t_epoch * 12:  # 1200-1400
             l1_lambda = self.l1_lambda
         else:  # 1400-1600
             l1_lambda = self.l1_lambda
