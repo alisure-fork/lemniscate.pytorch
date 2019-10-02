@@ -57,7 +57,7 @@ class HCBasicBlock(nn.Module):
 
 class HCResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10, linear_bias=True):
+    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, linear_bias=True):
         super(HCResNet, self).__init__()
         self.in_planes = 64
 
@@ -69,7 +69,6 @@ class HCResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.linear_512 = nn.Linear(512 * block.expansion, low_dim, bias=linear_bias)
         self.linear_128 = nn.Linear(low_dim, low_dim2, bias=linear_bias)
-        self.linear_10 = nn.Linear(low_dim2, low_dim3, bias=linear_bias)
         self.l2norm = Normalize(2)
         pass
 
@@ -95,9 +94,7 @@ class HCResNet(nn.Module):
         out_logits2 = self.linear_128(out_logits)
         out_l2norm2 = self.l2norm(out_logits2)
 
-        out_logits3 = self.linear_10(out_logits2)
-        out_l2norm3 = self.l2norm(out_logits3)
-        return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3
+        return out_logits, out_l2norm, out_logits2, out_l2norm2
 
     pass
 
@@ -184,12 +181,11 @@ class CIFAR10Instance(datasets.CIFAR10):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, low_dim, low_dim2, low_dim3, train_loader, test_loader, k, t, loader_n=1):
+    def knn(epoch, net, low_dim, low_dim2, train_loader, test_loader, k, t, loader_n=1):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
-        out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
         if hasattr(train_loader.dataset, "train_labels"):
             train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
         else:
@@ -200,11 +196,10 @@ class KNN(object):
         train_loader.dataset.transform = test_loader.dataset.transform
         temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
         for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+            out_logits, out_l2norm, out_logits2, out_l2norm2 = net(inputs)
             batch_size = inputs.size(0)
             out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
             out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
-            out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
             pass
         train_loader.dataset.transform = transform_bak
 
@@ -237,34 +232,27 @@ class KNN(object):
             for loader in now_loader:
                 top1, top5 = 0., 0.
                 top12, top52 = 0., 0.
-                top13, top53 = 0., 0.
                 total = 0
 
                 retrieval_one_hot = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot2 = torch.zeros(k, max_c).cuda()  # [200, 10]
-                retrieval_one_hot3 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 
-                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+                    out_logits, out_l2norm, out_logits2, out_l2norm2 = net(inputs)
                     dist = torch.mm(out_l2norm, out_memory)
                     dist2 = torch.mm(out_l2norm2, out_memory2)
-                    dist3 = torch.mm(out_l2norm3, out_memory3)
                     top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5)
                     top12, top52, retrieval_one_hot2 = _cal(inputs, dist2, train_labels,
                                                             retrieval_one_hot2, top12, top52)
-                    top13, top53, retrieval_one_hot3 = _cal(inputs, dist3, train_labels,
-                                                            retrieval_one_hot3, top13, top53)
                     pass
 
                 Tools.print("Test 1 {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total,
                                                                        top5 * 100. / total))
                 Tools.print("Test 2 {} Top1={:.2f} Top5={:.2f}".format(epoch, top12 * 100. / total,
                                                                        top52 * 100. / total))
-                Tools.print("Test 3 {} Top1={:.2f} Top5={:.2f}".format(epoch, top13 * 100. / total,
-                                                                       top53 * 100. / total))
-                all_acc.append(top13 / total)
+                all_acc.append(top12 / total)
 
                 pass
             pass
@@ -336,8 +324,7 @@ class ProduceClass(object):
 
 class HCRunner(object):
 
-    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10,
-                 ratio1=3, ratio2=2, ratio3=1, batch_size=128,
+    def __init__(self, low_dim=512, low_dim2=128, ratio1=2, ratio2=1, batch_size=128,
                  is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1,
                  learning_rate=0.03, learning_rate_type=0,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200,
@@ -351,10 +338,8 @@ class HCRunner(object):
 
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
-        self.low_dim3 = low_dim3
         self.ratio1 = ratio1
         self.ratio2 = ratio2
-        self.ratio3 = ratio3
 
         self.t_epoch = t_epoch
         self.max_epoch = max_epoch
@@ -374,15 +359,13 @@ class HCRunner(object):
             self.data_root, batch_size=self.batch_size)
         self.train_num = self.train_set.__len__()
 
-        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim,
-                            self.low_dim2, self.low_dim3, linear_bias=linear_bias).cuda()
+        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, self.low_dim2, linear_bias=linear_bias).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
 
         self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
         self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
-        self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=self.ratio3)
         self.criterion = HCLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
@@ -498,7 +481,7 @@ class HCRunner(object):
         pass
 
     def test(self, epoch=0, t=0.1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2, self.low_dim3,
+        _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2,
                        self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
         return _acc
 
@@ -511,18 +494,15 @@ class HCRunner(object):
                 Tools.print("Update label {} .......".format(epoch))
                 self.produce_class.reset()
                 self.produce_class2.reset()
-                self.produce_class3.reset()
                 for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                     inputs, indexes = inputs.cuda(), indexes.cuda()
-                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+                    out_logits, out_l2norm, out_logits2, out_l2norm2 = self.net(inputs)
                     self.produce_class.cal_label(out_l2norm, indexes)
                     self.produce_class2.cal_label(out_l2norm2, indexes)
-                    self.produce_class3.cal_label(out_l2norm3, indexes)
                     pass
-                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{}".format(
+                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{}".format(
                     epoch, self.produce_class.count, self.produce_class.count_2,
-                    self.produce_class2.count, self.produce_class2.count_2,
-                    self.produce_class3.count, self.produce_class3.count_2))
+                    self.produce_class2.count, self.produce_class2.count_2))
                 pass
         finally:
             pass
@@ -536,22 +516,19 @@ class HCRunner(object):
 
             avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_2, avg_loss_2_1, avg_loss_2_2 = AverageMeter(), AverageMeter(), AverageMeter()
-            avg_loss_3, avg_loss_3_1, avg_loss_3_2 = AverageMeter(), AverageMeter(), AverageMeter()
 
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
-                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+                out_logits, out_l2norm, out_logits2, out_l2norm2 = self.net(inputs)
 
                 targets = self.produce_class.get_label(indexes)
                 targets2 = self.produce_class2.get_label(indexes)
-                targets3 = self.produce_class3.get_label(indexes)
 
                 params = [_ for _ in self.net.module.parameters()]
                 loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3], _l1_lambda_)
                 loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2], _l1_lambda_)
-                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1], _l1_lambda_)
 
                 avg_loss_1.update(loss_1.item(), inputs.size(0))
                 avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))
@@ -559,17 +536,14 @@ class HCRunner(object):
                 avg_loss_2.update(loss_2.item(), inputs.size(0))
                 avg_loss_2_1.update(loss_2_1.item(), inputs.size(0))
                 avg_loss_2_2.update(loss_2_2.item(), inputs.size(0))
-                avg_loss_3.update(loss_3.item(), inputs.size(0))
-                avg_loss_3_1.update(loss_3_1.item(), inputs.size(0))
-                avg_loss_3_2.update(loss_3_2.item(), inputs.size(0))
 
                 if self.is_loss_sum:
-                    loss = loss_1 + loss_2 + loss_3 if self.has_l1 else loss_1_1 + loss_2_1 + loss_3_1
+                    loss = loss_1 + loss_2 if self.has_l1 else loss_1_1 + loss_2_1
                 else:
                     if self.has_l1:
-                        loss = loss_1 if batch_idx % 3 == 0 else (loss_2 if batch_idx % 3 == 1 else loss_3)
+                        loss = loss_1 if batch_idx % 2 == 0 else loss_2
                     else:
-                        loss = loss_1_1 if batch_idx % 3 == 0 else (loss_2_1 if batch_idx % 3 == 1 else loss_3_1)
+                        loss = loss_1_1 if batch_idx % 2 == 0 else loss_2_1
                     pass
                 loss.backward()
 
@@ -577,10 +551,9 @@ class HCRunner(object):
                 pass
 
             Tools.print(
-                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) '
-                'Loss 2: {:.4f}({:.4f}/{:.4f}) Loss 3: {:.4f}({:.4f}/{:.4f})'.format(
-                    epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg,avg_loss_2.avg,
-                    avg_loss_2_1.avg, avg_loss_2_2.avg, avg_loss_3.avg, avg_loss_3_1.avg, avg_loss_3_2.avg))
+                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) Loss 2: {:.4f}({:.4f}/{:.4f})'.format(
+                    epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg,
+                    avg_loss_1_2.avg,avg_loss_2.avg, avg_loss_2_1.avg, avg_loss_2_2.avg))
         finally:
             pass
 
@@ -611,7 +584,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     86.14(1024, 13462/1716) 85.95(256, 13462/1716) 85.99(64, 12505/2035)
@@ -624,28 +597,13 @@ if __name__ == '__main__':
     84.75(1024) 84.88(256) 84.74(64)
     """
 
-    # _start_epoch = 0
-    # _max_epoch = 1000
-    # _learning_rate = 0.01
-    # _learning_rate_type = 0
-    # _first_epoch, _t_epoch = 300, 100
-    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-
-    # _start_epoch = 0
-    # _max_epoch = 1000
-    # _learning_rate = 0.005
-    # _learning_rate_type = 1
-    # _first_epoch, _t_epoch = 300, 100
-    # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-
     _start_epoch = 0
     _max_epoch = 1600
     _learning_rate = 0.01
     _learning_rate_type = 0
     _first_epoch, _t_epoch = 200, 100
-    _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
-    # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
-    _ratio1, _ratio2, _ratio3 = 3, 3, 3
+    _low_dim, _low_dim2 = 1024, 128
+    _ratio1, _ratio2 = 2, 1
     _l1_lambda = 0.5
     _is_adjust_lambda = True
 
@@ -654,26 +612,25 @@ if __name__ == '__main__':
     _has_l1 = True
     # _l1_lambda = 0.5
     # _is_adjust_lambda = True
-    # _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1000_no_32_1_l1_sum/ckpt.t7"
-    _name = "11_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}".format(
-        _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
+    # _pre_train = "./checkpoint/11_class_1024_2level_128_1600_no_128_1_l1_sum_1/ckpt.t7"
+    _name = "11_class_{}_2level_{}_{}_no_{}_{}_l1_sum_{}".format(
+        _low_dim, _low_dim2, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
     Tools.print("name={}".format(_name))
-    Tools.print("low_dim={} low_dim2={} low_dim3={}".format(_low_dim, _low_dim2, _low_dim3))
+    Tools.print("low_dim={} low_dim2={}".format(_low_dim, _low_dim2))
     Tools.print("learning_rate={} batch_size={}".format(_learning_rate, _batch_size))
     Tools.print("has_l1={} l1_lambda={} is_adjust_lambda={}".format(_has_l1, _l1_lambda, _is_adjust_lambda))
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
-                      ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3,
+    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2,
+                      ratio1=_ratio1, ratio2=_ratio2,
                       linear_bias=_linear_bias, has_l1=_has_l1,
                       l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
                       is_loss_sum=_is_loss_sum, batch_size=_batch_size,
