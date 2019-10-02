@@ -624,6 +624,7 @@ if __name__ == '__main__':
     Tools.print()
     Tools.print("name={}".format(_name))
     Tools.print("low_dim={} low_dim2={}".format(_low_dim, _low_dim2))
+    Tools.print("ratio1={} ratio2={}".format(_ratio1, _ratio2))
     Tools.print("learning_rate={} batch_size={}".format(_learning_rate, _batch_size))
     Tools.print("has_l1={} l1_lambda={} is_adjust_lambda={}".format(_has_l1, _l1_lambda, _is_adjust_lambda))
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
