@@ -651,9 +651,10 @@ if __name__ == '__main__':
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1000_no_memory_1_l1_sum/ckpt.t7"
-    _name = "11_class_{}_3level_{}_{}_{}_no_memory_{}_l1_sum_{}".format(
-        _low_dim, _low_dim2, _low_dim3, _max_epoch, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
+    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1000_no_32_1_l1_sum/ckpt.t7"
+    _name = "11_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}".format(
+        _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
+        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
