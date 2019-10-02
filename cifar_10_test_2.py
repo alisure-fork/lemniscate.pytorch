@@ -13,10 +13,14 @@ from cifar_11_3level_no_memory_l2 import AttentionBasicBlock
 class CIFAR10Instance(data_set.CIFAR10):
 
     def __getitem__(self, index):
-        if self.train:
-            img, target = self.train_data[index], self.train_labels[index]
+        if hasattr(self, "data") and hasattr(self, "targets"):
+            img, target = self.data[index], self.targets[index]
         else:
-            img, target = self.test_data[index], self.test_labels[index]
+            if self.train:
+                img, target = self.train_data[index], self.train_labels[index]
+            else:
+                img, target = self.test_data[index], self.test_labels[index]
+            pass
 
         img = Image.fromarray(img)
 
@@ -383,9 +387,12 @@ if __name__ == '__main__':
     2: 0.8874 classier_256_2_3_0
     2: 0.8843 classier_64_2_4_0
     2: 0.8844 classier_64_2_5_0
+    
+    # 0.8724 1241, 11_class_1024_256_64_1600_no_32_1_l1_sum_1
+    2: 0.8972 classier_1024_2_0_0
     """
 
-    _which = 0
+    _which = 2
     _is_l2norm = False
     _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
@@ -411,9 +418,14 @@ if __name__ == '__main__':
     # from cifar_11_3level_no_memory_l2 import AttentionResNet
 
     # 5
+    # _low_dim = [1024, 256, 64]
+    # _name = "11_class_1024_3level_256_64_1000_no_memory_1_l1_sum"
+    # from cifar_11_3level_no_memory_l2 import AttentionResNet
+
+    # 6
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_3level_256_64_1000_no_memory_1_l1_sum"
-    from cifar_11_3level_no_memory_l2 import AttentionResNet
+    _name = "12_class_1024_256_64_1600_no_32_1_l1_sum_1"
+    from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
