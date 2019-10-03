@@ -388,7 +388,7 @@ if __name__ == '__main__':
     2: 0.8843 classier_64_2_4_0
     2: 0.8844 classier_64_2_5_0
     
-    # 0.8724 1241, 11_class_1024_256_64_1600_no_32_1_l1_sum_1
+    # 0.8724 1241, 11_class_1024_256_64_1600_no_32_1_l1_sum_1_321
     2: 0.9000 classier_1024_2_0_0
     2: 0.8993 classier_1024_2_1_0
     2: 0.9011 classier_256_2_2_0
@@ -429,7 +429,7 @@ if __name__ == '__main__':
 
     # 6
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_1"
+    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_1_321"
     from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)

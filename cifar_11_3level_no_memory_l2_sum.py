@@ -611,7 +611,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     86.14(1024, 13462/1716) 85.95(256, 13462/1716) 85.99(64, 12505/2035)
@@ -620,10 +620,10 @@ if __name__ == '__main__':
     # 11_class_1024_3level_256_128_64_no_memory_1_l1_sum_1
     85.75(1024, 15723/3209) 85.64(256, 12264/2661) 85.63(64, 10684/2315)
     
-    # 11_class_1024_256_64_1600_no_128_1_l1_sum_1
+    # 11_class_1024_256_64_1600_no_128_1_l1_sum_1_321
     84.75(1024) 84.88(256) 84.74(64)
     
-    # 11_class_1024_256_64_1600_no_321_l1_sum_1
+    # 11_class_1024_256_64_1600_no_32_1_l1_sum_1_321
     87.25(1024) 87.19(256) 87.24(64)
     """
 
@@ -648,9 +648,9 @@ if __name__ == '__main__':
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
-    _ratio1, _ratio2, _ratio3 = 3, 2, 1
-    _l1_lambda = 0.5
-    _is_adjust_lambda = True
+    _ratio1, _ratio2, _ratio3 = 5, 5, 5
+    _l1_lambda = 0.0
+    _is_adjust_lambda = False
 
     _batch_size = 32
     _is_loss_sum = True
@@ -661,10 +661,10 @@ if __name__ == '__main__':
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1/ckpt.t7"
-    _name = "11_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}".format(
+    # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
+    _name = "11_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
-        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0)
+        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
