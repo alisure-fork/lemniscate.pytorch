@@ -651,7 +651,7 @@ if __name__ == '__main__':
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
-    _ratio1, _ratio2, _ratio3 = 3, 2, 1
+    _ratio1, _ratio2, _ratio3 = 3, 3, 3
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
