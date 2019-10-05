@@ -318,7 +318,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -338,6 +338,7 @@ if __name__ == '__main__':
     2: 0.9474/0.9294(0.9502/0.9275)  # classier_1024_0_1_1
     # 0.8536, 172, 11_class_1024_3level_256_64_500_no_memory_1_l1
     2: 0.9349  # classier_256_2_2_1
+    2: 0.9358  # 0.8836 1361 + 1198, 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
     
     2: 0.8790  # 0.8358, 870, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
     2: 0.8787  # 0.8381, 898, 9_class_1024_norm_count_3level_256_64_lr_1000, classier_1024_2_0_0
@@ -396,18 +397,26 @@ if __name__ == '__main__':
     2: 0.8964 classier_64_2_4_0
     2: 0.8970 classier_64_2_5_0
     
-    # 0.8759 1361, 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0
+    # 0.8759 1361, 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
     2: 0.9018 classier_1024_2_0_0
-    2: 0. classier_1024_2_1_0
+    2: 0.9012 classier_1024_2_1_0
     2: 0.8994 classier_256_2_2_0
-    2: 0. classier_256_2_3_0
+    2: 0.8988 classier_256_2_3_0
     2: 0.8991 classier_64_2_4_0
-    2: 0. classier_64_2_5_0
+    2: 0.8983 classier_64_2_5_0
+    
+    # 0.8836 1361 + 1198, 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
+    2: 0.9049 classier_1024_2_0_0
+    2: 0.9060 classier_1024_2_1_0
+    2: 0.9048 classier_256_2_2_0
+    2: 0.9047 classier_256_2_3_0
+    2: 0.9040 classier_64_2_4_0
+    2: 0.9028 classier_64_2_5_0
     """
 
-    _which = 2
+    _which = 0
     _is_l2norm = False
-    _is_fine_tune = False
+    _is_fine_tune = True
     _classifier_type = 2  # 0, 1, 2
 
     # 1
@@ -442,7 +451,7 @@ if __name__ == '__main__':
 
     # 7
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0"
+    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_321"
     from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
@@ -458,7 +467,8 @@ if __name__ == '__main__':
         _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
 
     Tools.print()
-    Tools.print("input_size={} name={} classier={}".format(_input_size, _name, _checkpoint_path_classier))
+    Tools.print("input_size={} name={}".format(_input_size, _name))
+    Tools.print("classier={}".format(_checkpoint_path_classier))
 
     _net = Classifier(input_size_or_list=_input_size if _classifier_type == 0 else [_input_size, 512, 256],
                       low_dim=_low_dim, classifier_type=_classifier_type,

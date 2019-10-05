@@ -626,8 +626,11 @@ if __name__ == '__main__':
     # 11_class_1024_256_64_1600_no_32_1_l1_sum_1_321
     87.25(1024) 87.19(256) 87.24(64)
     
-    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0
+    # 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
     87.64(1024, 17809/3045) 87.65(256, 13821/1756) 87.59(64, 12949/1997)
+    
+    # 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
+    88.41(1024, 16684/2523) 88.63(256, 12625/1250) 88.36(64, 11818/1902)
     """
 
     # _start_epoch = 0
@@ -644,7 +647,9 @@ if __name__ == '__main__':
     # _first_epoch, _t_epoch = 300, 100
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
-    _start_epoch = 0
+    _start_epoch = 600
+    _resume = True
+
     _max_epoch = 1600
     _learning_rate = 0.01
     _learning_rate_type = 0
@@ -662,7 +667,7 @@ if __name__ == '__main__':
     # _is_adjust_lambda = True
     # _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _linear_bias = False
-    _resume = False
+    # _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
     _name = "11_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
