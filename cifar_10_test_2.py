@@ -3,11 +3,10 @@ import torch
 from PIL import Image
 import torch.nn as nn
 import torch.optim as optimizer
-import torch.utils.data as data
 from alisuretool.Tools import Tools
 import torchvision.datasets as data_set
 import torchvision.transforms as transforms
-from cifar_11_3level_no_memory_l2 import AttentionBasicBlock
+from cifar_11_3level_no_memory_l2_sum import HCBasicBlock as AttentionBasicBlock
 
 
 class CIFAR10Instance(data_set.CIFAR10):
@@ -410,12 +409,21 @@ if __name__ == '__main__':
     2: 0.9060 classier_1024_2_1_0
     2: 0.9048 classier_256_2_2_0
     2: 0.9047 classier_256_2_3_0
-    2: 0.9040 classier_64_2_4_0
+    2: 0.9041 classier_64_2_4_0
     2: 0.9028 classier_64_2_5_0
+    
+    # 0.8845 1361 + 1391, 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
+    2: 0.9056 classier_1024_2_0_0
+    2: 0.90 classier_1024_2_1_0
+    2: 0.9043 classier_256_2_2_0
+    2: 0.90 classier_256_2_3_0
+    2: 0.90 classier_64_2_4_0
+    2: 0.90 classier_64_2_5_0
+    
     """
 
-    _which = 2
-    _is_l2norm = True
+    _which = 0
+    _is_l2norm = False
     _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
 
@@ -456,7 +464,7 @@ if __name__ == '__main__':
 
     # 8
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_555"
+    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_321"
     from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
