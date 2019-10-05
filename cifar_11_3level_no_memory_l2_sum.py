@@ -631,6 +631,12 @@ if __name__ == '__main__':
     
     # 11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
     88.41(1024, 16684/2523) 88.63(256, 12625/1250) 88.36(64, 11818/1902)
+    
+    # 11_class_1024_256_64_1600_no_32_1_l1_sum_0_333
+    88.20(1024, 15770/2614) 88.21(256, 10121/769) 86.61 (64, 7463/1141)
+    
+    # 11_class_1024_256_64_1600_no_32_1_l1_sum_0_555 1380
+    88.01(1024, x) 88.07(256, x) 83.61 (64, x)
     """
 
     # _start_epoch = 0
@@ -647,7 +653,7 @@ if __name__ == '__main__':
     # _first_epoch, _t_epoch = 300, 100
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
-    _start_epoch = 600
+    _start_epoch = 0
     _resume = True
 
     _max_epoch = 1600
@@ -656,7 +662,7 @@ if __name__ == '__main__':
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
-    _ratio1, _ratio2, _ratio3 = 3, 3, 3
+    _ratio1, _ratio2, _ratio3 = 5, 5, 5
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 

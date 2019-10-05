@@ -318,7 +318,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -414,9 +414,9 @@ if __name__ == '__main__':
     2: 0.9028 classier_64_2_5_0
     """
 
-    _which = 0
-    _is_l2norm = False
-    _is_fine_tune = True
+    _which = 2
+    _is_l2norm = True
+    _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
 
     # 1
@@ -450,8 +450,13 @@ if __name__ == '__main__':
     # from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 7
+    # _low_dim = [1024, 256, 64]
+    # _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_321"
+    # from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 8
     _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_321"
+    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_555"
     from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
