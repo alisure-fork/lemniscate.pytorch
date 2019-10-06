@@ -598,8 +598,8 @@ if __name__ == '__main__':
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2 = 1024, 128
     _ratio1, _ratio2 = 2, 1
-    _l1_lambda = 0.5
-    _is_adjust_lambda = True
+    _l1_lambda = 0.0
+    _is_adjust_lambda = False
 
     _batch_size = 128
     _is_loss_sum = True
