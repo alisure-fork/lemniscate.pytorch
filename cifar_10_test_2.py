@@ -437,8 +437,8 @@ if __name__ == '__main__':
     2: 0.8859 classier_64_2_5_0
     """
 
-    _which = 2
-    _is_l2norm = True
+    _which = 4
+    _is_l2norm = False
     _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
 
@@ -478,9 +478,14 @@ if __name__ == '__main__':
     # from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 8
-    _low_dim = [1024, 256, 64]
-    _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_333"
-    from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # _low_dim = [1024, 256, 64]
+    # _name = "11_class_1024_256_64_1600_no_32_1_l1_sum_0_333"
+    # from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 9
+    _low_dim = [1024, 512, 256, 128, 64]
+    _name = "11_class_1024_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
+    from cifar_11_5level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
