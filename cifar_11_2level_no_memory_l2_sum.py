@@ -587,8 +587,8 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_1024_2level_128_1600_no_128_1_l1_sum_1
-    84.36(1024) 84.35(128)
+    # 11_class_1024_2level_128_1600_no_32_1_l1_sum_0
+    87.09(1024) 87.03(128)
     """
 
     _start_epoch = 0
@@ -601,7 +601,7 @@ if __name__ == '__main__':
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
-    _batch_size = 128
+    _batch_size = 32
     _is_loss_sum = True
     _has_l1 = True
     # _l1_lambda = 0.5
