@@ -527,8 +527,8 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    # 11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0
-    87.64(1024, 17809/3045) 87.65(256, 13821/1756) 87.59(64, 12949/1997)
+    # 11_class_128_1level_1600_no_32_1_l1_sum_0_1
+    85.34(128, 13196/2543)
     """
 
     _start_epoch = 0
@@ -545,9 +545,10 @@ if __name__ == '__main__':
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_1level_1600_no_32_1_l1_sum_0_1/ckpt.t7"
+    # _pre_train = "./checkpoint/11_class_128_1level_1600_no_32_1_l1_sum_0_1/ckpt.t7"
     _name = "11_class_{}_1level_{}_no_{}_{}_l1_sum_{}_{}".format(
-        _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio)
+        _low_dim, _max_epoch, _batch_size,
+        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
