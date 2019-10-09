@@ -57,7 +57,7 @@ class HCBasicBlock(nn.Module):
 
 class HCResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10, low_dim4=10, linear_bias=True):
+    def __init__(self, block, num_blocks, low_dim=512, low_dim2=128, low_dim3=10, linear_bias=True):
         super(HCResNet, self).__init__()
         self.in_planes = 64
 
@@ -67,10 +67,9 @@ class HCResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear_1024 = nn.Linear(512 * block.expansion, low_dim, bias=linear_bias)
-        self.linear_512 = nn.Linear(low_dim, low_dim2, bias=linear_bias)
-        self.linear_256 = nn.Linear(low_dim2, low_dim3, bias=linear_bias)
-        self.linear_128 = nn.Linear(low_dim3, low_dim4, bias=linear_bias)
+        self.linear_512 = nn.Linear(512 * block.expansion, low_dim, bias=linear_bias)
+        self.linear_128 = nn.Linear(low_dim, low_dim2, bias=linear_bias)
+        self.linear_10 = nn.Linear(low_dim2, low_dim3, bias=linear_bias)
         self.l2norm = Normalize(2)
         pass
 
@@ -90,18 +89,15 @@ class HCResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_1024(out)
+        out_logits = self.linear_512(out)
         out_l2norm = self.l2norm(out_logits)
 
-        out_logits2 = self.linear_512(out_logits)
+        out_logits2 = self.linear_128(out_logits)
         out_l2norm2 = self.l2norm(out_logits2)
 
-        out_logits3 = self.linear_256(out_logits2)
+        out_logits3 = self.linear_10(out_logits2)
         out_l2norm3 = self.l2norm(out_logits3)
-
-        out_logits4 = self.linear_128(out_logits3)
-        out_l2norm4 = self.l2norm(out_logits4)
-        return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3, out_logits4, out_l2norm4
+        return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3
 
     pass
 
@@ -133,11 +129,14 @@ class AverageMeter(object):
     pass
 
 
-class CIFAR10Instance(datasets.CIFAR10):
+class STL10Instance(datasets.STL10):
 
     def __getitem__(self, index):
-        if hasattr(self, "data") and hasattr(self, "targets"):
-            img, target = self.data[index], self.targets[index]
+        if hasattr(self, "data") and hasattr(self, "labels"):
+            if self.labels is not None:
+                img, target = self.data[index], int(self.labels[index])
+            else:
+                img, target = self.data[index], None
         else:
             if self.train:
                 img, target = self.train_data[index], self.train_labels[index]
@@ -145,7 +144,7 @@ class CIFAR10Instance(datasets.CIFAR10):
                 img, target = self.test_data[index], self.test_labels[index]
             pass
 
-        img = Image.fromarray(img)
+        img = Image.fromarray(np.transpose(img, (1, 2, 0)))
 
         if self.transform is not None:
             img = self.transform(img)
@@ -168,19 +167,23 @@ class CIFAR10Instance(datasets.CIFAR10):
         ])
 
         transform_test = transforms.Compose([
+            transforms.Resize(32),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
 
-        train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
-
-        test_set = CIFAR10Instance(root=data_root, train=False, download=True, transform=transform_test)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
-
         class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-        return train_set, train_loader, test_set, test_loader, class_name
+        train_set = STL10Instance(root=data_root, split="unlabeled", download=True, transform=transform_train)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
+
+        test_train_set = STL10Instance(root=data_root, split="train", download=True, transform=transform_test)
+        test_train_loader = torch.utils.data.DataLoader(test_train_set, batch_size, shuffle=False, num_workers=2)
+
+        test_test_set = STL10Instance(root=data_root, split="test", download=True, transform=transform_test)
+        test_test_loader = torch.utils.data.DataLoader(test_test_set, batch_size, shuffle=False, num_workers=2)
+
+        return train_set, train_loader, test_train_set, test_train_loader, test_test_set, test_test_loader, class_name
 
     pass
 
@@ -188,30 +191,29 @@ class CIFAR10Instance(datasets.CIFAR10):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, low_dim, low_dim2, low_dim3, low_dim4, train_loader, test_loader, k, t, loader_n=1):
+    def knn(epoch, net, low_dim, low_dim2, low_dim3, train_loader, test_loader, k, t, loader_n=1):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
         out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
-        out_memory4 = torch.rand(n_sample, low_dim4).t().cuda()
-        if hasattr(train_loader.dataset, "train_labels"):
-            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
-        else:
-            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
+
+        _d = train_loader.dataset
+        train_labels = _d.train_labels if hasattr(_d, "train_labels") else(
+            _d.targets if hasattr(_d, "targets") else _d.labels)
+        train_labels = torch.LongTensor(train_labels).cuda()
+
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
         train_loader.dataset.transform = test_loader.dataset.transform
         temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
         for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-            (out_logits, out_l2norm, out_logits2, out_l2norm2,
-             out_logits3, out_l2norm3, out_logits4, out_l2norm4) = net(inputs)
+            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
             batch_size = inputs.size(0)
             out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
             out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
             out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
-            out_memory4[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm4.data.t()
             pass
         train_loader.dataset.transform = transform_bak
 
@@ -245,30 +247,24 @@ class KNN(object):
                 top1, top5 = 0., 0.
                 top12, top52 = 0., 0.
                 top13, top53 = 0., 0.
-                top14, top54 = 0., 0.
                 total = 0
 
                 retrieval_one_hot = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot2 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot3 = torch.zeros(k, max_c).cuda()  # [200, 10]
-                retrieval_one_hot4 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 for batch_idx, (inputs, targets, indexes) in enumerate(loader):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 
-                    (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                     out_logits3, out_l2norm3, out_logits4, out_l2norm4) = net(inputs)
+                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
                     dist = torch.mm(out_l2norm, out_memory)
                     dist2 = torch.mm(out_l2norm2, out_memory2)
                     dist3 = torch.mm(out_l2norm3, out_memory3)
-                    dist4 = torch.mm(out_l2norm4, out_memory4)
                     top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5)
                     top12, top52, retrieval_one_hot2 = _cal(inputs, dist2, train_labels,
                                                             retrieval_one_hot2, top12, top52)
                     top13, top53, retrieval_one_hot3 = _cal(inputs, dist3, train_labels,
                                                             retrieval_one_hot3, top13, top53)
-                    top14, top54, retrieval_one_hot4 = _cal(inputs, dist4, train_labels,
-                                                            retrieval_one_hot4, top14, top54)
                     pass
 
                 Tools.print("Test 1 {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total,
@@ -277,9 +273,7 @@ class KNN(object):
                                                                        top52 * 100. / total))
                 Tools.print("Test 3 {} Top1={:.2f} Top5={:.2f}".format(epoch, top13 * 100. / total,
                                                                        top53 * 100. / total))
-                Tools.print("Test 4 {} Top1={:.2f} Top5={:.2f}".format(epoch, top14 * 100. / total,
-                                                                       top54 * 100. / total))
-                all_acc.append(top14 / total)
+                all_acc.append(top13 / total)
 
                 pass
             pass
@@ -351,8 +345,8 @@ class ProduceClass(object):
 
 class HCRunner(object):
 
-    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, low_dim4=10,
-                 ratio1=3, ratio2=2, ratio3=1, ratio4=1, batch_size=128,
+    def __init__(self, low_dim=512, low_dim2=128, low_dim3=10,
+                 ratio1=3, ratio2=2, ratio3=1, batch_size=128,
                  is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200,
                  resume=False, checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
@@ -366,11 +360,9 @@ class HCRunner(object):
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
         self.low_dim3 = low_dim3
-        self.low_dim4 = low_dim4
         self.ratio1 = ratio1
         self.ratio2 = ratio2
         self.ratio3 = ratio3
-        self.ratio4 = ratio4
 
         self.t_epoch = t_epoch
         self.max_epoch = max_epoch
@@ -383,12 +375,13 @@ class HCRunner(object):
 
         self.best_acc = 0
 
-        self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
+        (self.train_set, self.train_loader, self.test_train_set, self.test_train_loader,
+         self.test_test_set, self.test_test_loader, self.class_name) = STL10Instance.data(
             self.data_root, batch_size=self.batch_size)
         self.train_num = self.train_set.__len__()
 
-        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, self.low_dim2,
-                            self.low_dim3, self.low_dim4, linear_bias=linear_bias).cuda()
+        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim,
+                            self.low_dim2, self.low_dim3, linear_bias=linear_bias).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
@@ -396,7 +389,6 @@ class HCRunner(object):
         self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
         self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
         self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=self.ratio3)
-        self.produce_class4 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim4, ratio=self.ratio4)
         self.criterion = HCLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
@@ -494,8 +486,8 @@ class HCRunner(object):
         pass
 
     def test(self, epoch=0, t=0.1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4,
-                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
+        _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2, self.low_dim3,
+                       self.test_train_loader, self.test_test_loader, 200, t, loader_n=loader_n)
         return _acc
 
     def _train_one_epoch(self, epoch, update_epoch=3):
@@ -508,21 +500,17 @@ class HCRunner(object):
                 self.produce_class.reset()
                 self.produce_class2.reset()
                 self.produce_class3.reset()
-                self.produce_class4.reset()
                 for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                     inputs, indexes = inputs.cuda(), indexes.cuda()
-                    (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                     out_logits3, out_l2norm3, out_logits4, out_l2norm4) = self.net(inputs)
+                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
                     self.produce_class.cal_label(out_l2norm, indexes)
                     self.produce_class2.cal_label(out_l2norm2, indexes)
                     self.produce_class3.cal_label(out_l2norm3, indexes)
-                    self.produce_class4.cal_label(out_l2norm4, indexes)
                     pass
-                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{} 4-{}/{}".format(
+                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{}".format(
                     epoch, self.produce_class.count, self.produce_class.count_2,
                     self.produce_class2.count, self.produce_class2.count_2,
-                    self.produce_class3.count, self.produce_class3.count_2,
-                    self.produce_class4.count, self.produce_class4.count_2))
+                    self.produce_class3.count, self.produce_class3.count_2))
                 pass
         finally:
             pass
@@ -537,25 +525,21 @@ class HCRunner(object):
             avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_2, avg_loss_2_1, avg_loss_2_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_3, avg_loss_3_1, avg_loss_3_2 = AverageMeter(), AverageMeter(), AverageMeter()
-            avg_loss_4, avg_loss_4_1, avg_loss_4_2 = AverageMeter(), AverageMeter(), AverageMeter()
 
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
-                (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                 out_logits3, out_l2norm3, out_logits4, out_l2norm4) = self.net(inputs)
+                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
 
                 targets = self.produce_class.get_label(indexes)
                 targets2 = self.produce_class2.get_label(indexes)
                 targets3 = self.produce_class3.get_label(indexes)
-                targets4 = self.produce_class4.get_label(indexes)
 
                 params = [_ for _ in self.net.module.parameters()]
-                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-4], _l1_lambda_)
-                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-3], _l1_lambda_)
-                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-2], _l1_lambda_)
-                loss_4, loss_4_1, loss_4_2 = self.criterion(out_logits4, targets4, params[-1], _l1_lambda_)
+                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3], _l1_lambda_)
+                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2], _l1_lambda_)
+                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1], _l1_lambda_)
 
                 avg_loss_1.update(loss_1.item(), inputs.size(0))
                 avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))
@@ -566,20 +550,14 @@ class HCRunner(object):
                 avg_loss_3.update(loss_3.item(), inputs.size(0))
                 avg_loss_3_1.update(loss_3_1.item(), inputs.size(0))
                 avg_loss_3_2.update(loss_3_2.item(), inputs.size(0))
-                avg_loss_4.update(loss_4.item(), inputs.size(0))
-                avg_loss_4_1.update(loss_4_1.item(), inputs.size(0))
-                avg_loss_4_2.update(loss_4_2.item(), inputs.size(0))
 
                 if self.is_loss_sum:
-                    loss = loss_1 + loss_2 + loss_3 + loss_4 if self.has_l1 \
-                        else loss_1_1 + loss_2_1 + loss_3_1 + loss_4_1
+                    loss = loss_1 + loss_2 + loss_3 if self.has_l1 else loss_1_1 + loss_2_1 + loss_3_1
                 else:
                     if self.has_l1:
-                        loss = loss_1 if batch_idx % 4 == 0 \
-                            else (loss_2 if batch_idx % 4 == 1 else (loss_3 if batch_idx % 4 == 2 else loss_4))
+                        loss = loss_1 if batch_idx % 3 == 0 else (loss_2 if batch_idx % 3 == 1 else loss_3)
                     else:
-                        loss = loss_1_1 if batch_idx % 4 == 0 \
-                            else (loss_2_1 if batch_idx % 4 == 1 else (loss_3_1 if batch_idx % 4 == 2 else loss_4_1))
+                        loss = loss_1_1 if batch_idx % 3 == 0 else (loss_2_1 if batch_idx % 3 == 1 else loss_3_1)
                     pass
                 loss.backward()
 
@@ -587,11 +565,10 @@ class HCRunner(object):
                 pass
 
             Tools.print(
-                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) Loss 2: {:.4f}({:.4f}/{:.4f}) '
-                'Loss 3: {:.4f}({:.4f}/{:.4f}) Loss 4: {:.4f}({:.4f}/{:.4f})'.format(
+                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) '
+                'Loss 2: {:.4f}({:.4f}/{:.4f}) Loss 3: {:.4f}({:.4f}/{:.4f})'.format(
                     epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg,avg_loss_2.avg,
-                    avg_loss_2_1.avg, avg_loss_2_2.avg, avg_loss_3.avg, avg_loss_3_1.avg, avg_loss_3_2.avg,
-                    avg_loss_4.avg, avg_loss_4_1.avg, avg_loss_4_2.avg))
+                    avg_loss_2_1.avg, avg_loss_2_2.avg, avg_loss_3.avg, avg_loss_3_1.avg, avg_loss_3_2.avg))
         finally:
             pass
 
@@ -622,7 +599,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     # 11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0_4321
@@ -641,29 +618,26 @@ if __name__ == '__main__':
     _batch_size = 32
     _is_loss_sum = True
     _has_l1 = True
-    # _l1_lambda = 0.5
-    # _is_adjust_lambda = True
-    # _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0/ckpt.t7"
-    _name = "11_class_{}_4level_{}_{}_{}_no_{}_{}_{}_l1_sum_{}_{}{}{}{}".format(
-        _low_dim, _low_dim2, _low_dim3, _low_dim4, _max_epoch, _batch_size,
-        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3, _ratio4)
+    # _pre_train = "./checkpoint/stl_11_class_1024_3level_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
+    _name = "stl_11_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
+        _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
+        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
     Tools.print("name={}".format(_name))
-    Tools.print("low_dim={} low_dim2={} low_dim3={} low_dim4={}".format(_low_dim, _low_dim2, _low_dim3, _low_dim4))
-    Tools.print("ratio1={} ratio2={} ratio3={} ratio4={}".format(_ratio1, _ratio2, _ratio3, _ratio4))
+    Tools.print("low_dim={} low_dim2={} low_dim3={}".format(_low_dim, _low_dim2, _low_dim3))
+    Tools.print("ratio1={} ratio2={} ratio3={}".format(_ratio1, _ratio2, _ratio3))
     Tools.print("learning_rate={} batch_size={}".format(_learning_rate, _batch_size))
     Tools.print("has_l1={} l1_lambda={} is_adjust_lambda={}".format(_has_l1, _l1_lambda, _is_adjust_lambda))
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3, low_dim4=_low_dim4,
-                      ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3, ratio4=_ratio4,
+    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
+                      ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3,
                       linear_bias=_linear_bias, has_l1=_has_l1,
                       l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
                       is_loss_sum=_is_loss_sum, batch_size=_batch_size, learning_rate=_learning_rate,

@@ -133,11 +133,14 @@ class AverageMeter(object):
     pass
 
 
-class CIFAR10Instance(datasets.CIFAR10):
+class STL10Instance(datasets.STL10):
 
     def __getitem__(self, index):
-        if hasattr(self, "data") and hasattr(self, "targets"):
-            img, target = self.data[index], self.targets[index]
+        if hasattr(self, "data") and hasattr(self, "labels"):
+            if self.labels is not None:
+                img, target = self.data[index], int(self.labels[index])
+            else:
+                img, target = self.data[index], None
         else:
             if self.train:
                 img, target = self.train_data[index], self.train_labels[index]
@@ -145,7 +148,7 @@ class CIFAR10Instance(datasets.CIFAR10):
                 img, target = self.test_data[index], self.test_labels[index]
             pass
 
-        img = Image.fromarray(img)
+        img = Image.fromarray(np.transpose(img, (1, 2, 0)))
 
         if self.transform is not None:
             img = self.transform(img)
@@ -168,19 +171,23 @@ class CIFAR10Instance(datasets.CIFAR10):
         ])
 
         transform_test = transforms.Compose([
+            transforms.Resize(32),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
 
-        train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
-
-        test_set = CIFAR10Instance(root=data_root, train=False, download=True, transform=transform_test)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
-
         class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-        return train_set, train_loader, test_set, test_loader, class_name
+        train_set = STL10Instance(root=data_root, split="unlabeled", download=True, transform=transform_train)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
+
+        test_train_set = STL10Instance(root=data_root, split="train", download=True, transform=transform_test)
+        test_train_loader = torch.utils.data.DataLoader(test_train_set, batch_size, shuffle=False, num_workers=2)
+
+        test_test_set = STL10Instance(root=data_root, split="test", download=True, transform=transform_test)
+        test_test_loader = torch.utils.data.DataLoader(test_test_set, batch_size, shuffle=False, num_workers=2)
+
+        return train_set, train_loader, test_train_set, test_train_loader, test_test_set, test_test_loader, class_name
 
     pass
 
@@ -195,10 +202,12 @@ class KNN(object):
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
         out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
         out_memory4 = torch.rand(n_sample, low_dim4).t().cuda()
-        if hasattr(train_loader.dataset, "train_labels"):
-            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
-        else:
-            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
+
+        _d = train_loader.dataset
+        train_labels = _d.train_labels if hasattr(_d, "train_labels") else(
+            _d.targets if hasattr(_d, "targets") else _d.labels)
+        train_labels = torch.LongTensor(train_labels).cuda()
+
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
@@ -383,8 +392,10 @@ class HCRunner(object):
 
         self.best_acc = 0
 
-        self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
+        (self.train_set, self.train_loader, self.test_train_set, self.test_train_loader,
+         self.test_test_set, self.test_test_loader, self.class_name) = STL10Instance.data(
             self.data_root, batch_size=self.batch_size)
+
         self.train_num = self.train_set.__len__()
 
         self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, self.low_dim2,
@@ -495,7 +506,7 @@ class HCRunner(object):
 
     def test(self, epoch=0, t=0.1, loader_n=1):
         _acc = KNN.knn(epoch, self.net, self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4,
-                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
+                       self.test_train_loader, self.test_test_loader, 200, t, loader_n=loader_n)
         return _acc
 
     def _train_one_epoch(self, epoch, update_epoch=3):
@@ -641,14 +652,11 @@ if __name__ == '__main__':
     _batch_size = 32
     _is_loss_sum = True
     _has_l1 = True
-    # _l1_lambda = 0.5
-    # _is_adjust_lambda = True
-    # _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0/ckpt.t7"
-    _name = "11_class_{}_4level_{}_{}_{}_no_{}_{}_{}_l1_sum_{}_{}{}{}{}".format(
+    # _pre_train = "./checkpoint/stl_11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0/ckpt.t7"
+    _name = "stl_11_class_{}_4level_{}_{}_{}_no_{}_{}_{}_l1_sum_{}_{}{}{}{}".format(
         _low_dim, _low_dim2, _low_dim3, _low_dim4, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3, _ratio4)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)

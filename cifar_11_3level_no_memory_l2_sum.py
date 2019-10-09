@@ -338,8 +338,7 @@ class HCRunner(object):
 
     def __init__(self, low_dim=512, low_dim2=128, low_dim3=10,
                  ratio1=3, ratio2=2, ratio3=1, batch_size=128,
-                 is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1,
-                 learning_rate=0.03, learning_rate_type=0,
+                 is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200,
                  resume=False, checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
@@ -364,9 +363,6 @@ class HCRunner(object):
         self.l1_lambda = l1_lambda
         self.is_adjust_lambda = is_adjust_lambda
         self.is_loss_sum = is_loss_sum
-        self.learning_rate_type = learning_rate_type
-        self.adjust_learning_rate = self._adjust_learning_rate \
-            if self.learning_rate_type == 0 else self._adjust_learning_rate2
 
         self.best_acc = 0
 
@@ -430,24 +426,6 @@ class HCRunner(object):
             param_group['lr'] = learning_rate
             pass
 
-        return learning_rate
-
-    def _adjust_learning_rate2(self, epoch):
-        if epoch < 100:
-            learning_rate = self.learning_rate
-        elif epoch < 200:
-            learning_rate = self.learning_rate / 5.0
-        elif epoch < 300:
-            learning_rate = self.learning_rate / 10.0
-        elif epoch < 400:
-            learning_rate = self.learning_rate / 20.0
-        else:
-            learning_rate = self.learning_rate / 40.0
-            pass
-
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] = learning_rate
-            pass
         return learning_rate
 
     def _adjust_l1_lambda(self, epoch):
@@ -530,7 +508,7 @@ class HCRunner(object):
         # Train
         try:
             self.net.train()
-            _learning_rate_ = self.adjust_learning_rate(epoch)
+            _learning_rate_ = self._adjust_learning_rate(epoch)
             _l1_lambda_ = self._adjust_l1_lambda(epoch)
             Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
 
@@ -643,14 +621,12 @@ if __name__ == '__main__':
     # _start_epoch = 0
     # _max_epoch = 1000
     # _learning_rate = 0.01
-    # _learning_rate_type = 0
     # _first_epoch, _t_epoch = 300, 100
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
     # _start_epoch = 0
     # _max_epoch = 1000
     # _learning_rate = 0.005
-    # _learning_rate_type = 1
     # _first_epoch, _t_epoch = 300, 100
     # _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
 
@@ -659,7 +635,6 @@ if __name__ == '__main__':
 
     _max_epoch = 1600
     _learning_rate = 0.01
-    _learning_rate_type = 0
     _first_epoch, _t_epoch = 200, 100
     _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
     # _low_dim, _low_dim2, _low_dim3 = 8192, 1024, 128
@@ -695,8 +670,7 @@ if __name__ == '__main__':
                       ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3,
                       linear_bias=_linear_bias, has_l1=_has_l1,
                       l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
-                      is_loss_sum=_is_loss_sum, batch_size=_batch_size,
-                      learning_rate=_learning_rate, learning_rate_type=_learning_rate_type,
+                      is_loss_sum=_is_loss_sum, batch_size=_batch_size, learning_rate=_learning_rate,
                       max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
                       resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
     Tools.print()
