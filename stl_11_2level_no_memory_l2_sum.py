@@ -193,10 +193,12 @@ class KNN(object):
         n_sample = train_loader.dataset.__len__()
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
-        if hasattr(train_loader.dataset, "train_labels"):
-            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
-        else:
-            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
+
+        _d = train_loader.dataset
+        train_labels = _d.train_labels if hasattr(_d, "train_labels") else(
+            _d.targets if hasattr(_d, "targets") else _d.labels)
+        train_labels = torch.LongTensor(train_labels).cuda()
+
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
