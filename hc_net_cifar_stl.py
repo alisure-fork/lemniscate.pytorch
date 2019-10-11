@@ -250,12 +250,19 @@ class KNN(object):
                         pass
                     pass
 
-                now = "Test {}".format(epoch)
+                # now = "Test {}".format(epoch)
+                # for i in range(len(low_dim_list)):
+                #     now += " {} Top1={:.2f} Top5={:.2f},".format(i, top1_list[i] * 100. / total,
+                #                                                  top5_list[i] * 100. / total)
+                #     pass
+                # Tools.print(now)
+
+                Tools.print("Test {}".format(epoch))
                 for i in range(len(low_dim_list)):
-                    now += " {} Top1={:.2f} Top5={:.2f},".format(i, top1_list[i] * 100. / total,
-                                                                 top5_list[i] * 100. / total)
+                    Tools.print(" {} Top1={:.2f} Top5={:.2f},".format(i, top1_list[i] * 100. / total,
+                                                                      top5_list[i] * 100. / total))
                     pass
-                Tools.print(now)
+
                 all_acc.append(top1_list[-1] / total)
                 pass
             pass
@@ -695,9 +702,9 @@ class HCRunner(object):
             _learning_rate_ = self._adjust_learning_rate(epoch)
             _l1_lambda_ = self._adjust_l1_lambda(epoch)
             Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
-            avg_loss_list = [AverageMeter() for i in range(len(self.low_dim_list))]
-            avg_loss_1_list = [AverageMeter() for i in range(len(self.low_dim_list))]
-            avg_loss_2_list = [AverageMeter() for i in range(len(self.low_dim_list))]
+            avg_loss_list = [AverageMeter() for _ in range(len(self.low_dim_list))]
+            avg_loss_1_list = [AverageMeter() for _ in range(len(self.low_dim_list))]
+            avg_loss_2_list = [AverageMeter() for _ in range(len(self.low_dim_list))]
 
             for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
@@ -761,7 +768,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     # 11_class_1024_512_256_128_64_no_1600_32_1_l1_sum_0_54321
@@ -787,7 +794,7 @@ if __name__ == '__main__':
     else:
         raise Exception("...hc_num={}...".format(_hc_num))
 
-    _data_set_name = "stl10"  # cifar10, cifar100, stl10
+    _data_set_name = "cifar10"  # cifar10, cifar100, stl10
     _start_epoch, _max_epoch = 0, 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
@@ -799,7 +806,7 @@ if __name__ == '__main__':
     _linear_bias = False
     _resume = False
     _pre_train = None
-    # pre_train = "./checkpoint/hc_net_dim_512_256_128_64_ratio_4321_epoch_1600_bz_32_bias_1_lambda_0_sum/ckpt.t7"
+    # pre_train = "./checkpoint/。。。/ckpt.t7"
 
     _low_dim_list_str = "".join(["_{}".format(low_dim) for low_dim in _low_dim_list])
     _ratio_list_str = "".join(["{}".format(ratio) for ratio in _ratio_list])

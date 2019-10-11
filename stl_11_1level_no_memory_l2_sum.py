@@ -188,10 +188,12 @@ class KNN(object):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
-        if hasattr(train_loader.dataset, "train_labels"):
-            train_labels = torch.LongTensor(train_loader.dataset.train_labels).cuda()
-        else:
-            train_labels = torch.LongTensor(train_loader.dataset.targets).cuda()
+
+        _d = train_loader.dataset
+        train_labels = _d.train_labels if hasattr(_d, "train_labels") else(
+            _d.targets if hasattr(_d, "targets") else _d.labels)
+        train_labels = torch.LongTensor(train_labels).cuda()
+
         max_c = train_labels.max() + 1
 
         transform_bak = train_loader.dataset.transform
@@ -537,24 +539,24 @@ if __name__ == '__main__':
 
     """
     # 11_class_128_1level_1600_no_32_1_l1_sum_0_1
-    85.34(128, 13196/2543)
+    76.88(128, 28433/3525)
     """
 
-    _start_epoch = 0
+    _start_epoch = 1000
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
     _low_dim = 128
     _ratio = 1
-    _l1_lambda = 0.0
-    _is_adjust_lambda = False
+    _l1_lambda = 0.5
+    _is_adjust_lambda = True
 
     _batch_size = 32
     _has_l1 = True
     _linear_bias = False
     _resume = False
-    _pre_train = None
-    # _pre_train = "./checkpoint/stl_11_class_128_1level_1600_no_32_1_l1_sum_0_1/ckpt.t7"
+    # _pre_train = None
+    _pre_train = "./checkpoint/stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1/ckpt.t7"
     _name = "stl_11_class_{}_1level_{}_no_{}_{}_l1_sum_{}_{}".format(
         _low_dim, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio)

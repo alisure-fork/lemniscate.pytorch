@@ -426,7 +426,9 @@ class CIFAR100Instance(datasets.CIFAR100):
         test_set = CIFAR100Instance(root=data_root, train=False, download=True, transform=transform_test)
         test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
 
-        return train_set, train_loader, test_set, test_loader
+        class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+        return train_set, train_loader, test_set, test_loader, class_name
 
     pass
 
@@ -688,11 +690,11 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_1024_512_256_128_64_no_1600_32_1_l1_sum_0_54321
-    87.73(1024) 87.91(512) 87.95(256) 87.69(128) 87.69(64)
+    # hc_cifar10_5_dim_1024_512_256_128_64_ratio_54321_epoch_1600_bz_32_bias_1_lambda_0_sum
+    88.13(1024) 88.20(512) 87.95(256) 87.89(128) 88.07(64)
     """
 
     _hc_num = 5
@@ -714,7 +716,7 @@ if __name__ == '__main__':
     else:
         raise Exception("...hc_num={}...".format(_hc_num))
 
-    _data_set_name = "cifar10"  # cifar10, cifar100
+    _data_set_name = "cifar100"  # cifar10, cifar100
     _start_epoch, _max_epoch = 0, 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
