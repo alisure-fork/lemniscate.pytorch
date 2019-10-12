@@ -325,7 +325,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     # 0.76875, stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1
@@ -336,20 +336,27 @@ if __name__ == '__main__':
     2: 47.11, classier_128_2_0_1, 0.01, init
     2: 55.00, classier_128_2_0_1, 0.001, init
     2: 37.96, classier_128_2_0_1, 0.0001, init
+    
+    # 0.811125 1584, stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321
     """
 
-    _which = 0
+    _which = 3
     _is_l2norm = False
     _classifier_type = 2  # 0, 1, 2
 
     _learning_rate = 0.03
-    _is_fine_tune = True
+    _is_fine_tune = False
     _fine_tune_learning_rate = 0.0001
 
     # 1
-    _low_dim = [128]
-    _name = "stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1"
-    from stl_11_1level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # _low_dim = [128]
+    # _name = "stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1"
+    # from stl_11_1level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 2
+    _low_dim = [1024, 512, 256, 128]
+    _name = "stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
+    from stl_11_4level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
@@ -358,8 +365,8 @@ if __name__ == '__main__':
     _max_epoch = 200
     _linear_bias = False
 
-    _pre_train_path = None
-    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    # _pre_train_path = None
+    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
 
