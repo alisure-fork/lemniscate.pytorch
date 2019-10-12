@@ -602,16 +602,16 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0_4321
-    87.73(1024) 87.91(512) 87.95(256) 87.69(128)
+    # stl_11_class_1024_3level_512_256_1600_no_32_1_l1_sum_0_321
+    80.11(1024, x) 80.03(256, 33914/5212) 79.56(64, 31753/4299)
     """
 
     _start_epoch = 0
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    _low_dim, _low_dim2, _low_dim3, _low_dim4 = 1024, 512, 256, 128
-    _ratio1, _ratio2, _ratio3, _ratio4 = 4, 3, 2, 1
+    _low_dim, _low_dim2, _low_dim3 = 1024, 512, 256
+    _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
