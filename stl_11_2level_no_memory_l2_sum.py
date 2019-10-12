@@ -575,8 +575,8 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_1024_2level_128_1600_no_32_1_l1_sum_0
-    87.09(1024) 87.03(128)
+    # stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0
+    79.76(1024, 39586/5708) 79.72(128, 33005/4773)
     """
 
     _start_epoch = 0

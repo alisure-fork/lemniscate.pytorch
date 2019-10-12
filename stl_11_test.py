@@ -325,10 +325,10 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    # 0.76875, stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1
+    # 0.7688 1xxx, stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1
     2: 78.86, classier_128_2_0_0, 0.001
     2: 82.46, classier_128_2_0_1, 0.01, fine_tune
     2: 84.51, classier_128_2_0_1, 0.001, fine_tune
@@ -337,10 +337,17 @@ if __name__ == '__main__':
     2: 55.00, classier_128_2_0_1, 0.001, init
     2: 37.96, classier_128_2_0_1, 0.0001, init
     
-    # 0.811125 1584, stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321
+    # 0.7973 1493, stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0
+    
+    # 0.8xxx 1xxx, stl_11_class_1024_3level_256_64_no_1600_32_1_l1_sum_0_321
+    
+    # 0.8111 1584, stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321
+    
+    # 0.8070 1592, stl_11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321
+    
     """
 
-    _which = 3
+    _which = 1
     _is_l2norm = False
     _classifier_type = 2  # 0, 1, 2
 
@@ -353,10 +360,20 @@ if __name__ == '__main__':
     # _name = "stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1"
     # from stl_11_1level_no_memory_l2_sum import HCResNet as AttentionResNet
 
-    # 2
-    _low_dim = [1024, 512, 256, 128]
-    _name = "stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
-    from stl_11_4level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # 4
+    # _low_dim = [1024, 512, 256, 128]
+    # _name = "stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
+    # from stl_11_4level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 3
+    # _low_dim = [1024, 128]
+    # _name = "stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
+    # from stl_11_2level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 5
+    _low_dim = [1024, 512, 256, 128, 64]
+    _name = "stl_11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
+    from stl_11_5level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
