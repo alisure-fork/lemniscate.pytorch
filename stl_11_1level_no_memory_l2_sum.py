@@ -538,7 +538,7 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
-    # 11_class_128_1level_1600_no_32_1_l1_sum_0_1
+    # stl_11_class_128_1level_1600_no_32_1_l1_sum_0_1
     76.88(128, 28433/3525)
     """
 
