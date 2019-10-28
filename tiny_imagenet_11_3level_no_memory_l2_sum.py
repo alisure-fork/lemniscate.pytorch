@@ -89,15 +89,19 @@ class HCResNet(nn.Module):
         out = self.layer4(out)
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
-        out_logits = self.linear_512(out)
-        out_l2norm = self.l2norm(out_logits)
 
-        out_logits2 = self.linear_128(out_logits)
+        out_logits0 = out
+        out_l2norm0 = self.l2norm(out_logits0)
+
+        out_logits1 = self.linear_512(out)
+        out_l2norm1 = self.l2norm(out_logits1)
+
+        out_logits2 = self.linear_128(out_logits1)
         out_l2norm2 = self.l2norm(out_logits2)
 
         out_logits3 = self.linear_10(out_logits2)
         out_l2norm3 = self.l2norm(out_logits3)
-        return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3
+        return out_logits0, out_l2norm0, out_logits1, out_l2norm1, out_logits2, out_l2norm2, out_logits3, out_l2norm3
 
     pass
 
@@ -144,19 +148,17 @@ class TinyImageInstance(datasets.ImageFolder):
     def data(train_root, test_root, batch_size=128, output_size=64):
         Tools.print('==> Preparing data..')
 
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
         transform_train = transforms.Compose([
             transforms.RandomResizedCrop(size=output_size, scale=(0.2, 1.)),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            transforms.ToTensor(), normalize
         ])
 
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
+        transform_test = transforms.Compose([transforms.Resize(output_size), transforms.ToTensor(), normalize])
 
         train_set = TinyImageInstance(root=train_root, transform=transform_train)
         train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=8)
@@ -177,6 +179,7 @@ class KNN(object):
     def knn(epoch, net, low_dim, low_dim2, low_dim3, train_loader, test_loader, k, t, loader_n=1):
         net.eval()
         n_sample = train_loader.dataset.__len__()
+        out_memory0 = torch.rand(n_sample, 512).t().cuda()
         out_memory = torch.rand(n_sample, low_dim).t().cuda()
         out_memory2 = torch.rand(n_sample, low_dim2).t().cuda()
         out_memory3 = torch.rand(n_sample, low_dim3).t().cuda()
@@ -190,8 +193,10 @@ class KNN(object):
         train_loader.dataset.transform = test_loader.dataset.transform
         temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
         for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
-            out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+            (out_logits0, out_l2norm0, out_logits,
+             out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3) = net(inputs)
             batch_size = inputs.size(0)
+            out_memory0[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm0.data.t()
             out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
             out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
             out_memory3[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm3.data.t()
@@ -225,11 +230,13 @@ class KNN(object):
             now_loader = [test_loader] if loader_n == 1 else [test_loader, train_loader]
 
             for loader in now_loader:
+                top10, top50 = 0., 0.
                 top1, top5 = 0., 0.
                 top12, top52 = 0., 0.
                 top13, top53 = 0., 0.
                 total = 0
 
+                retrieval_one_hot0 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot2 = torch.zeros(k, max_c).cuda()  # [200, 10]
                 retrieval_one_hot3 = torch.zeros(k, max_c).cuda()  # [200, 10]
@@ -237,17 +244,24 @@ class KNN(object):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 
-                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = net(inputs)
+                    (out_logits0, out_l2norm0, out_logits,
+                     out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3) = net(inputs)
+                    dist0 = torch.mm(out_l2norm0, out_memory0)
                     dist = torch.mm(out_l2norm, out_memory)
                     dist2 = torch.mm(out_l2norm2, out_memory2)
                     dist3 = torch.mm(out_l2norm3, out_memory3)
-                    top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5)
+                    top10, top50, retrieval_one_hot0 = _cal(inputs, dist0, train_labels,
+                                                            retrieval_one_hot0, top10, top50)
+                    top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels,
+                                                         retrieval_one_hot, top1, top5)
                     top12, top52, retrieval_one_hot2 = _cal(inputs, dist2, train_labels,
                                                             retrieval_one_hot2, top12, top52)
                     top13, top53, retrieval_one_hot3 = _cal(inputs, dist3, train_labels,
                                                             retrieval_one_hot3, top13, top53)
                     pass
 
+                Tools.print("Test 0 {} Top1={:.2f} Top5={:.2f}".format(epoch, top10 * 100. / total,
+                                                                       top50 * 100. / total))
                 Tools.print("Test 1 {} Top1={:.2f} Top5={:.2f}".format(epoch, top1 * 100. / total,
                                                                        top5 * 100. / total))
                 Tools.print("Test 2 {} Top1={:.2f} Top5={:.2f}".format(epoch, top12 * 100. / total,
@@ -484,7 +498,7 @@ class HCRunner(object):
                 self.produce_class3.reset()
                 for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                     inputs, indexes = inputs.cuda(), indexes.cuda()
-                    out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+                    _, _, out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
                     self.produce_class.cal_label(out_l2norm, indexes)
                     self.produce_class2.cal_label(out_l2norm2, indexes)
                     self.produce_class3.cal_label(out_l2norm3, indexes)
@@ -512,7 +526,7 @@ class HCRunner(object):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
-                out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
+                _, _, out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3 = self.net(inputs)
 
                 targets = self.produce_class.get_label(indexes)
                 targets2 = self.produce_class2.get_label(indexes)
@@ -557,7 +571,7 @@ class HCRunner(object):
         # Test
         try:
             Tools.print("Test [{}] .......".format(epoch))
-            _acc = self.test(epoch=epoch)
+            _acc = self.test(epoch=epoch, loader_n=2)
             if _acc > self.best_acc:
                 Tools.print('Saving..')
                 state = {'net': self.net.state_dict(), 'acc': _acc, 'epoch': epoch}
@@ -581,11 +595,14 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # tiny_11_class_1024_256_64_1600_no_32_1_l1_sum_0_321
-    88.01(1024, x) 88.07(256, x) 83.61 (64, x)
+    # tiny_11_class_1024_256_64_1600_no_256_1_l1_sum_0_321
+    29.50(1024, 35799/3875) 29.25(256, 30645/3000) 29.50(64, 28156/2939)
+    
+    # tiny_11_class_4096_2048_1024_1600_no_256_1_l1_sum_0_321
+    33.26(4096, 35799/3875) 33.75(2048, 30645/3000) 33.45(1024, 28156/2939)
     """
 
     _start_epoch = 0
@@ -594,7 +611,7 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    _low_dim, _low_dim2, _low_dim3 = 1024, 256, 64
+    _low_dim, _low_dim2, _low_dim3 = 4096, 2048, 1024
     _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -604,8 +621,8 @@ if __name__ == '__main__':
     _has_l1 = True
     _linear_bias = False
     _pre_train = None
-    # _pre_train = "./checkpoint/tiny_11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
-    _name = "tiny_11_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
+    # _pre_train = "./checkpoint/tiny_10_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
+    _name = "tiny_10_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
@@ -618,7 +635,6 @@ if __name__ == '__main__':
     Tools.print("has_l1={} l1_lambda={} is_adjust_lambda={}".format(_has_l1, _l1_lambda, _is_adjust_lambda))
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
-
     runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3,
                       ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3,
                       linear_bias=_linear_bias, has_l1=_has_l1,
@@ -627,7 +643,7 @@ if __name__ == '__main__':
                       max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
                       resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
     Tools.print()
-    acc = runner.test()
+    acc = runner.test(loader_n=2)
     Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
     runner.train(start_epoch=_start_epoch, update_epoch=1)
     Tools.print()
