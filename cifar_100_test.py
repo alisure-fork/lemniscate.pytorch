@@ -34,14 +34,45 @@ class CIFAR100Instance(data_set.CIFAR100):
     @staticmethod
     def data(data_root, is_train_shuffle=True, batch_size=128):
         Tools.print('==> Preparing data..')
+
+        # transform_train = transforms.Compose([
+        #     transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
+        #     transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
+        #     transforms.RandomGrayscale(p=0.2),
+        #     transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+        #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        # ])
+
+        # transform_train = transforms.Compose([
+        #     transforms.RandomCrop(32, padding=4),
+        #     transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+        #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
+
+        # 1:73.60
+        # 1,3:71.36
+        # 1,4:74.15
+        # 1,3,4:71.27
+        # 1,2,3,4:71.11
+        # 2:76.28
+        # 2,3:73.23
+        # 2,4:75.54
+        # 2,3,4:72.42
+
+        # Tools.print("transform_train = transforms.Compose([")
+        # Tools.print("transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),")
+        # Tools.print("transforms.RandomCrop(32, padding=4),")
+        # Tools.print("transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),")
+        # Tools.print("transforms.RandomGrayscale(p=0.2),")
+        # Tools.print("transforms.RandomHorizontalFlip(), transforms.ToTensor(),")
+        # Tools.print("transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])")
+
         transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
+            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),  # 1
+            # transforms.RandomCrop(32, padding=4),  # 2
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),  # 3
+            transforms.RandomGrayscale(p=0.2),  # 4
+            transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
 
         transform_test = transforms.Compose([
             transforms.ToTensor(),
@@ -147,7 +178,7 @@ class Classifier(nn.Module):
     def __init__(self, low_dim, input_size_or_list, output_size=10,
                  classifier_type=0, which_out=0, is_fine_tune=False, linear_bias=True):
         super(Classifier, self).__init__()
-        assert len(low_dim) > which_out
+        assert len(low_dim) * 2 > which_out
 
         self.which_out = which_out
         self.is_fine_tune = is_fine_tune
@@ -161,10 +192,10 @@ class Classifier(nn.Module):
             pass
 
         if classifier_type == 1:
-            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >=1
+            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >= 1
             self.linear = MultipleLinearClassifiers(input_size_or_list, output_size)
         elif classifier_type == 2:
-            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >=1
+            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >= 1
             self.linear = MultipleNonLinearClassifier(input_size_or_list, output_size)
         else:
             assert isinstance(input_size_or_list, int)
@@ -176,6 +207,7 @@ class Classifier(nn.Module):
         out = out[self.which_out]
         out = self.linear(out)
         return out
+
     pass
 
 
@@ -280,7 +312,7 @@ class ClassierRunner(object):
             correct += predicted.eq(targets).sum().item()
             pass
         Tools.print("Epoch {} {} {}/({}-{})".format(epoch, " Test" if is_test_test else "Train",
-                                                    correct/total, correct, total))
+                                                    correct / total, correct, total))
         return correct / total * 100
 
     def _train_one_epoch(self, epoch, test_per_epoch=3):
@@ -332,38 +364,63 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
     """
-    # 0.xxxx xxxx 11_class_4096_2048_1024_1600_no_128_1_l1_sum_0_321
-    2: 0.xxxx classier_4096_2_0_0
-    2: 0.xxxx classier_4096_2_0_0 fine tune
-    2: 0.xxxx classier_4096_2_0_0 init
+    # 0.5366 1289 11_class_4096_2048_1024_1600_no_128_1_l1_sum_0_321
+    2: 0.5981 classier_4096_2_0_0
+    2: 0.7594 classier_4096_2_0_1 init
+    2: 0.7629 classier_2048_2_2_1 init
+    2: 0.7582 classier_1024_2_4_1 init
+
+    # 0.5602 1570 11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321
+    2: 0.6147 classier_4096_2_0_0
+    2: 0.7352 classier_4096_2_0_1 fine tune
+    2: 0.7213 classier_4096_2_0_1 init
     
-    2: 0.xxxx classier_1024_2_4_0
-    2: 0.xxxx classier_1024_2_4_0 fine tune
-    2: 0.xxxx classier_1024_2_4_0 init
+    # 0.5624 1585 11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134
+    2: 0.6071 classier_4096_2_0_0 da=1
+    2: 0.7471 classier_4096_2_0_1 da=1 fine tune
+    2: 0.7407 classier_4096_2_0_1 da=1 init
+    2: 0.6193 classier_4096_2_0_0 da=134
+    2: 0.7199 classier_4096_2_0_1 da=134 fine tune
+    2: 0.7133 classier_4096_2_0_1 da=134 init
     """
 
     # 1
+    # _low_dim = [4096, 2048, 1024]
+    # _name = "11_class_4096_2048_1024_1600_no_128_1_l1_sum_0_321"
+    # from cifar_100_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 2
+    # _low_dim = [4096, 2048, 1024]
+    # _name = "11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321"
+    # from cifar_100_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 3
+    # _low_dim = [4096, 2048, 1024]
+    # _name = "11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_1"
+    # from cifar_100_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 4
     _low_dim = [4096, 2048, 1024]
-    _name = "hc_cifar100_5_dim_1024_512_256_128_64_ratio_54321_epoch_1600_bz_32_bias_1_lambda_0_sum"
+    _name = "11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134"
     from cifar_100_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _which = 0
     _is_l2norm = False
     _classifier_type = 2  # 0, 1, 2
     _learning_rate = 0.01
-    _is_fine_tune = True
+    _is_fine_tune = False
     _fine_tune_learning_rate = 0.01
-    _pre_train_path = None
-    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    # _pre_train_path = None
+    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
 
     _start_epoch = 0  # train epoch
-    _max_epoch = 200
+    _max_epoch = 300
     _linear_bias = False
 
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
@@ -379,14 +436,11 @@ if __name__ == '__main__':
     runner = ClassierRunner(net=_net, learning_rate=_learning_rate, fine_tune_learning_rate=_fine_tune_learning_rate,
                             max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
     Tools.print('Random accuracy: {:.2f}/{:.2f}'.format(train_acc, test_acc))
-
     runner.train(start_epoch=_start_epoch, test_per_epoch=1)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
