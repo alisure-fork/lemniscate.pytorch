@@ -63,7 +63,7 @@ class Cifar10TSNE(object):
         fig = plt.figure()
         for i in range(data.shape[0]):
             plt.text(data[i, 0], data[i, 1], s if s is not None else str(label[i]),
-                     color=color[label[i]], fontdict={'weight': 'bold', 'size': 3})
+                     color=color[label[i]], fontdict={'weight': 'bold', 'size': 2})
             pass
 
         plt.axis('off')
@@ -71,7 +71,7 @@ class Cifar10TSNE(object):
         plt.yticks([])
 
         Tools.print("begin to save {}".format(result_png))
-        plt.savefig(result_png, dpi=500)
+        plt.savefig(result_png, dpi=200)
         return fig
 
     pass
@@ -81,8 +81,8 @@ if __name__ == '__main__':
 
     _checkpoint_path = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
 
-    is_train = True
-    _feature_name = FeatureName.ConvB3
+    is_train = False
+    _feature_name = FeatureName.L2norm5
 
     _feature_file = "./checkpoint/{}/feature_{}.pkl".format(_checkpoint_path, "train" if is_train else "test")
     _result_png = "./checkpoint/{}/feature/feature_{}_{}.png".format(
