@@ -85,14 +85,15 @@ class HCResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
-        out = out.view(out.size(0), -1)
-        out_logits = self.linear_1024(out)
+        convB1 = F.relu(self.bn1(self.conv1(x)))
+        convB2 = self.layer1(convB1)
+        convB3 = self.layer2(convB2)
+        convB4 = self.layer3(convB3)
+        convB5 = self.layer4(convB4)
+        avgPool = F.avg_pool2d(convB5, 4)
+        avgPool = avgPool.view(avgPool.size(0), -1)
+
+        out_logits = self.linear_1024(avgPool)
         out_l2norm = self.l2norm(out_logits)
 
         out_logits2 = self.linear_512(out_logits)
@@ -106,8 +107,27 @@ class HCResNet(nn.Module):
 
         out_logits5 = self.linear_64(out_logits4)
         out_l2norm5 = self.l2norm(out_logits5)
+
+        feature_dict = {}
+        # feature_dict["ConvB1"] = convB1
+        # feature_dict["ConvB2"] = convB2
+        feature_dict["ConvB3"] = convB3
+        feature_dict["ConvB4"] = convB4
+        feature_dict["ConvB5"] = convB5
+        feature_dict["AvgPool"] = avgPool
+        # feature_dict["Logits1"] = out_logits
+        feature_dict["L2norm1"] = out_l2norm
+        # feature_dict["Logits2"] = out_logits2
+        feature_dict["L2norm2"] = out_l2norm2
+        # feature_dict["Logits3"] = out_logits3
+        feature_dict["L2norm3"] = out_l2norm3
+        # feature_dict["Logits4"] = out_logits4
+        feature_dict["L2norm4"] = out_l2norm4
+        # feature_dict["Logits5"] = out_logits5
+        feature_dict["L2norm5"] = out_l2norm5
+
         return out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, \
-               out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5
+               out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5, feature_dict
 
     pass
 
@@ -213,7 +233,7 @@ class KNN(object):
         temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
         for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
             (out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3,
-             out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5) = net(inputs)
+             out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5, feature_dict) = net(inputs)
             batch_size = inputs.size(0)
             out_memory[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm.data.t()
             out_memory2[:, batch_idx * batch_size:batch_idx * batch_size + batch_size] = out_l2norm2.data.t()
@@ -266,8 +286,8 @@ class KNN(object):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 
-                    (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                     out_logits3, out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5) = net(inputs)
+                    (out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3,
+                     out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5, feature_dict) = net(inputs)
                     dist = torch.mm(out_l2norm, out_memory)
                     dist2 = torch.mm(out_l2norm2, out_memory2)
                     dist3 = torch.mm(out_l2norm3, out_memory3)
@@ -530,8 +550,8 @@ class HCRunner(object):
                 self.produce_class5.reset()
                 for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
                     inputs, indexes = inputs.cuda(), indexes.cuda()
-                    (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                     out_logits3, out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5) = self.net(inputs)
+                    (out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3,
+                     out_logits4, out_l2norm4, out_logits5, out_l2norm5, feature_dict) = self.net(inputs)
                     self.produce_class.cal_label(out_l2norm, indexes)
                     self.produce_class2.cal_label(out_l2norm2, indexes)
                     self.produce_class3.cal_label(out_l2norm3, indexes)
@@ -565,8 +585,8 @@ class HCRunner(object):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
-                (out_logits, out_l2norm, out_logits2, out_l2norm2,
-                 out_logits3, out_l2norm3, out_logits4, out_l2norm4, out_logits5, out_l2norm5) = self.net(inputs)
+                (out_logits, out_l2norm, out_logits2, out_l2norm2, out_logits3, out_l2norm3,
+                 out_logits4, out_l2norm4, out_logits5, out_l2norm5, feature_dict) = self.net(inputs)
 
                 targets = self.produce_class.get_label(indexes)
                 targets2 = self.produce_class2.get_label(indexes)
