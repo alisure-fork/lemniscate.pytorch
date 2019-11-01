@@ -3,24 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from alisuretool.Tools import Tools
-
-
-class FeatureName(object):
-    feature = "feature"
-    label = "label"
-
-    ConvB1 = "ConvB1"
-    ConvB2 = "ConvB2"
-    ConvB3 = "ConvB3"
-    ConvB4 = "ConvB4"
-    ConvB5 = "ConvB5"
-    AvgPool = "AvgPool"
-    L2norm1 = "L2norm1"
-    L2norm2 = "L2norm2"
-    L2norm3 = "L2norm3"
-    L2norm4 = "L2norm4"
-    L2norm5 = "L2norm5"
-    pass
+from cifar_10_tool import FeatureName
 
 
 class Cifar10TSNE(object):
@@ -59,6 +42,11 @@ class Cifar10TSNE(object):
         x_min, x_max = np.min(data, 0), np.max(data, 0)
         data = (data - x_min) / (x_max - x_min)
 
+        # data = np.asarray([a for a in data if a[0] < 0.8 and a[1] > 0.1])  # x
+        data = np.asarray([a for a in data if a[0] < 0.4 and a[1] > 0.5])  # ConvB3
+        x_min, x_max = np.min(data, 0), np.max(data, 0)
+        data = (data - x_min) / (x_max - x_min)
+
         color = ["g", "r", "c", "m", "y", "k", "sienna", "orange", "lawngreen", "deepskyblue", "lightcoral", "b"]
         fig = plt.figure()
         for i in range(data.shape[0]):
@@ -78,11 +66,10 @@ class Cifar10TSNE(object):
 
 
 if __name__ == '__main__':
-
     _checkpoint_path = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
 
     is_train = False
-    _feature_name = FeatureName.L2norm5
+    _feature_name = FeatureName.ConvB3
 
     _feature_file = "./checkpoint/{}/feature_{}.pkl".format(_checkpoint_path, "train" if is_train else "test")
     _result_png = "./checkpoint/{}/feature/feature_{}_{}.png".format(

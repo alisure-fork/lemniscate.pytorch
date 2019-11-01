@@ -1,119 +1,9 @@
 import os
 import torch
-from PIL import Image
 import torch.nn as nn
 import torch.optim as optimizer
 from alisuretool.Tools import Tools
-import torchvision.datasets as data_set
-import torchvision.transforms as transforms
-from cifar_10_3level_no_memory_l2_sum import HCBasicBlock as AttentionBasicBlock
-
-
-class CIFAR10Instance(data_set.CIFAR10):
-
-    def __getitem__(self, index):
-        if hasattr(self, "data") and hasattr(self, "targets"):
-            img, target = self.data[index], self.targets[index]
-        else:
-            if self.train:
-                img, target = self.train_data[index], self.train_labels[index]
-            else:
-                img, target = self.test_data[index], self.test_labels[index]
-            pass
-
-        img = Image.fromarray(img)
-
-        if self.transform is not None:
-            img = self.transform(img)
-
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target, index
-
-    @staticmethod
-    def data(data_root, is_train_shuffle=True):
-        Tools.print('==> Preparing data..')
-        transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-
-        transform_test = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
-
-        train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size=100, shuffle=is_train_shuffle, num_workers=2)
-
-        test_set = CIFAR10Instance(root=data_root, train=False, download=True, transform=transform_test)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=100, shuffle=False, num_workers=2)
-
-        class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-
-        return train_set, train_loader, test_set, test_loader, class_name
-
-    pass
-
-
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-
-    def __init__(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-        pass
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-        pass
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
-        pass
-
-    pass
-
-
-class LinearClassifier(nn.Module):
-
-    def __init__(self, input_size, output_size=10):
-        super(LinearClassifier, self).__init__()
-        self.linear = nn.Linear(input_size, output_size)
-        pass
-
-    def forward(self, inputs):
-        return self.linear(inputs)
-
-    pass
-
-
-class MultipleLinearClassifiers(nn.Module):
-
-    def __init__(self, input_size_list, output_size=10):
-        super(MultipleLinearClassifiers, self).__init__()
-        self.linear_1 = LinearClassifier(input_size_list[0], input_size_list[1])
-        self.linear_2 = LinearClassifier(input_size_list[1], input_size_list[2])
-        self.linear_3 = LinearClassifier(input_size_list[2], output_size)
-        pass
-
-    def forward(self, inputs):
-        return self.linear_3(self.linear_2(self.linear_1(inputs)))
-
-    pass
+from cifar_10_tool import HCBasicBlock, AverageMeter, CIFAR10Instance, FeatureName
 
 
 class MultipleNonLinearClassifier(nn.Module):
@@ -144,37 +34,51 @@ class MultipleNonLinearClassifier(nn.Module):
 class Classifier(nn.Module):
 
     def __init__(self, low_dim, input_size_or_list, output_size=10,
-                 classifier_type=0, which_out=0, is_fine_tune=False, linear_bias=True):
+                 feature_name=FeatureName.L2norm0, is_fine_tune=False, linear_bias=True):
         super(Classifier, self).__init__()
-        assert len(low_dim) * 2 > which_out
 
-        self.which_out = which_out
+        self.feature_name = feature_name
         self.is_fine_tune = is_fine_tune
 
-        self.attention = AttentionResNet(AttentionBasicBlock,
-                                         [2, 2, 2, 2], *low_dim, linear_bias=linear_bias).cuda()
+        self.attention = HCResNet(HCBasicBlock, [2, 2, 2, 2], *low_dim, linear_bias=linear_bias).cuda()
 
         if not self.is_fine_tune:
-            for p in self.parameters():
-                p.requires_grad = False
+            # 3, 15, 30, 45, 60
+            if self.feature_name == FeatureName.ConvB2:
+                for index, p in enumerate(self.parameters()):
+                    if index < 15:
+                        p.requires_grad = False
+                    pass
+                pass
+            elif self.feature_name == FeatureName.ConvB3:
+                for index, p in enumerate(self.parameters()):
+                    if index < 30:
+                        p.requires_grad = False
+                    pass
+                pass
+            elif self.feature_name == FeatureName.ConvB4:
+                for index, p in enumerate(self.parameters()):
+                    if index < 45:
+                        p.requires_grad = False
+                    pass
+                pass
+            else:
+                for p in self.parameters():
+                    p.requires_grad = False
+                    pass
                 pass
             pass
 
-        if classifier_type == 1:
-            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >=1
-            self.linear = MultipleLinearClassifiers(input_size_or_list, output_size)
-        elif classifier_type == 2:
-            assert isinstance(input_size_or_list, list) and len(input_size_or_list) >=1
-            self.linear = MultipleNonLinearClassifier(input_size_or_list, output_size)
-        else:
-            assert isinstance(input_size_or_list, int)
-            self.linear = LinearClassifier(input_size_or_list, output_size)
+        assert isinstance(input_size_or_list, list) and len(input_size_or_list) >= 1
+        self.linear = MultipleNonLinearClassifier(input_size_or_list, output_size)
         pass
 
     def forward(self, inputs):
         out = self.attention(inputs)
-        out = self.linear(out[self.which_out])
+        out = out[self.feature_name]
+        out = self.linear(out)
         return out
+
     pass
 
 
@@ -317,7 +221,6 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -437,11 +340,6 @@ if __name__ == '__main__':
     2: 0.8859 classier_64_2_5_0
     """
 
-    _which = 4
-    _is_l2norm = True
-    _is_fine_tune = False
-    _classifier_type = 2  # 0, 1, 2
-
     # 1
     # _low_dim = [2048, 512, 128]
     # _name = "9_class_2048_norm_count_3level_512_128_lr_1000"
@@ -483,12 +381,35 @@ if __name__ == '__main__':
     # from cifar_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 9
+
+    """
+    # 85.50, 11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321
+    2: 0.9059 classier_1024_2_0_0
+    2: 0.9045 classier_1024_2_1_0
+    2: 0.9041 classier_256_2_2_0
+    2: 0.9048 classier_256_2_3_0
+    2: 0.8858 classier_64_2_4_0
+    2: 0.8859 classier_64_2_5_0
+    """
     _low_dim = [1024, 512, 256, 128, 64]
     _name = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    from cifar_10_5level_z import HCResNet as AttentionResNet
+    from cifar_10_5level_z import HCResNet
 
-    _which_out = _which * 2 + (1 if _is_l2norm else 0)
-    _input_size = _low_dim[_which]  # first input size
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+    _which = 0
+    _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+                     [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+                     [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
+                     [FeatureName.Logits4, _low_dim[3]], [FeatureName.Logits5, _low_dim[4]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
+    #                  [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
+    _feature_name = _feature_list[_which][0]
+    _input_size = _feature_list[_which][1]
+
+    _is_fine_tune = False
 
     _start_epoch = 0  # train epoch
     _max_epoch = 200
@@ -497,15 +418,14 @@ if __name__ == '__main__':
     # _pre_train_path = None
     _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
-        _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
+        _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 
     Tools.print()
     Tools.print("input_size={} name={}".format(_input_size, _name))
     Tools.print("classier={}".format(_checkpoint_path_classier))
 
-    _net = Classifier(input_size_or_list=_input_size if _classifier_type == 0 else [_input_size, 512, 256],
-                      low_dim=_low_dim, classifier_type=_classifier_type,
-                      which_out=_which_out, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
+    _net = Classifier(input_size_or_list=[_input_size, 512, 256], low_dim=_low_dim,
+                      feature_name=_feature_name, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
     Tools.print()

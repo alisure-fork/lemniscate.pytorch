@@ -138,7 +138,7 @@ if __name__ == '__main__':
     _low_dim = [1024, 512, 256, 128, 64]
     _checkpoint_path = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
     _checkpoint_path_classier = "./checkpoint/{}/ckpt.t7".format(_checkpoint_path)
-    from cifar_10_5level_no_memory_l2_sum import HCResNet
+    from cifar_10_5level_z import HCResNet
 
     Tools.print()
     Tools.print("classier={}".format(_checkpoint_path_classier))
