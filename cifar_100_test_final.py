@@ -33,7 +33,7 @@ class MultipleNonLinearClassifier(nn.Module):
 
 class Classifier(nn.Module):
 
-    def __init__(self, low_dim, input_size_or_list, output_size=10,
+    def __init__(self, low_dim, input_size_or_list, output_size=100,
                  feature_name=FeatureName.L2norm0, is_fine_tune=False, linear_bias=True):
         super(Classifier, self).__init__()
 
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     from cifar_10_5level_z import HCResNet
 
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    _which = 2
+    _which = 0
     # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
     #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
     #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
@@ -248,8 +248,8 @@ if __name__ == '__main__':
     _max_epoch = 200
     _linear_bias = False
 
-    _pre_train_path = None
-    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    # _pre_train_path = None
+    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 
