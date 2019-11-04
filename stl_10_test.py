@@ -7,7 +7,7 @@ import torch.optim as optimizer
 from alisuretool.Tools import Tools
 import torchvision.datasets as data_set
 import torchvision.transforms as transforms
-from stl_11_1level_no_memory_l2_sum import HCBasicBlock as AttentionBasicBlock
+from stl_10_1level_no_memory_l2_sum import HCBasicBlock as AttentionBasicBlock
 
 
 class STL10Instance(data_set.STL10):
@@ -35,11 +35,11 @@ class STL10Instance(data_set.STL10):
         return img, target, index
 
     @staticmethod
-    def data(data_root, batch_size=128):
+    def data(data_root, batch_size=128, input_size=32):
         Tools.print('==> Preparing data..')
 
         transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
+            transforms.RandomResizedCrop(size=input_size, scale=(0.2, 1.)),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomHorizontalFlip(),
@@ -48,7 +48,7 @@ class STL10Instance(data_set.STL10):
         ])
 
         transform_test = transforms.Compose([
-            transforms.Resize(32),
+            transforms.Resize(input_size),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
@@ -151,16 +151,18 @@ class MultipleNonLinearClassifier(nn.Module):
 
 class Classifier(nn.Module):
 
-    def __init__(self, low_dim, input_size_or_list, output_size=10,
+    def __init__(self, low_dim, input_size_or_list, output_size=10, input_size=32, conv1_stride=1,
                  classifier_type=0, which_out=0, is_fine_tune=False, linear_bias=True):
         super(Classifier, self).__init__()
         assert len(low_dim) * 2 > which_out
 
         self.which_out = which_out
         self.is_fine_tune = is_fine_tune
+        self.input_size = input_size
+        self.conv1_stride = conv1_stride
 
-        self.attention = AttentionResNet(AttentionBasicBlock,
-                                         [2, 2, 2, 2], *low_dim, linear_bias=linear_bias).cuda()
+        self.attention = AttentionResNet(AttentionBasicBlock, [2, 2, 2, 2], *low_dim, linear_bias=linear_bias,
+                                         input_size=self.input_size, conv1_stride=self.conv1_stride).cuda()
 
         if not self.is_fine_tune:
             for p in self.parameters():
@@ -188,14 +190,16 @@ class Classifier(nn.Module):
 
 class ClassierRunner(object):
 
-    def __init__(self, net, learning_rate=0.03, fine_tune_learning_rate=0.001, max_epoch=1000, resume=False,
-                 is_fine_tune=False, pre_train_path=None, checkpoint_path="./classier.t7", data_root='./data'):
+    def __init__(self, net, learning_rate=0.03, fine_tune_learning_rate=0.001,
+                 max_epoch=1000, resume=False, input_size=32, is_fine_tune=False,
+                 pre_train_path=None, checkpoint_path="./classier.t7", data_root='./data'):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
         self.pre_train_path = pre_train_path
         self.resume = resume
         self.is_fine_tune = is_fine_tune
         self.data_root = data_root
+        self.input_size = input_size
 
         self.best_acc = 0
 
@@ -204,7 +208,7 @@ class ClassierRunner(object):
             pass
 
         (self.train_set, self.train_loader, self.test_train_set, self.test_train_loader,
-         self.test_test_set, self.test_test_loader, _) = STL10Instance.data(self.data_root)
+         self.test_test_set, self.test_test_loader, _) = STL10Instance.data(self.data_root, input_size=self.input_size)
         self.train_num = self.train_set.__len__()
 
         self.net = net.cuda()
@@ -325,7 +329,6 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
     # 0.7688 1xxx, stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1
@@ -370,40 +373,90 @@ if __name__ == '__main__':
     2: 87.41, classier_128_2_0_1, 0.01, fine_tune
     2: 86.96, classier_128_2_0_1, 0.001, fine_tune
     2: 86.08, classier_128_2_0_1, 0.0001, fine_tune
+    
+    # 0.8167 1597, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_2
+    2: 85.84, classier_1024_2_0_0, 0.001
+    2: 85.05, classier_512_2_2_0, 0.001
+    2: 84.91, classier_256_2_4_0, 0.001
+    2: 84.67, classier_128_2_6_0, 0.001
+    2: 84.72, classier_64_2_8_0, 0.001
+    2: 87.94, classier_1024_2_0_1, 0.001, fine_tune
+    2: 88.02, classier_512_2_2_1, 0.001, fine_tune
+    2: 88.14, classier_256_2_4_1, 0.001, fine_tune
+    2: 88.02, classier_128_2_6_1, 0.001, fine_tune
+    2: 87.91, classier_64_2_8_1, 0.001, fine_tune
+    2: 89.12, classier_1024_2_0_1, 0.01, fine_tune
+    2: 89.08, classier_512_2_2_1, 0.01, fine_tune
+    2: 88.99, classier_256_2_4_1, 0.01, fine_tune
+    2: 88.72, classier_128_2_6_1, 0.01, fine_tune
+    2: 88.84, classier_64_2_8_1, 0.01, fine_tune
+    
+    # 0.8301 1579, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_2
+    2: 85.71, classier_1024_2_0_0, 0.001
+    2: 85.70, classier_512_2_2_0, 0.001
+    2: 85.31, classier_256_2_4_0, 0.001
+    2: 85.26, classier_128_2_6_0, 0.001
+    2: 84.85, classier_64_2_8_0, 0.001
+    2: 89.72, classier_1024_2_0_1, 0.01, fine_tune
+    2: 89.68, classier_512_2_2_1, 0.01, fine_tune
+    2: 89.36, classier_256_2_4_1, 0.01, fine_tune
+    2: 89.70, classier_128_2_6_1, 0.01, fine_tune
+    2: 89.39, classier_64_2_8_1, 0.01, fine_tune
+    
+    # 0.8393 1291, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1
+    2: 86.94, classier_1024_2_0_0, 0.001
+    2: 86.80, classier_512_2_2_0, 0.001
+    2: 86.69, classier_256_2_4_0, 0.001
+    2: 86.29, classier_128_2_6_0, 0.001
+    2: 86.40, classier_64_2_8_0, 0.001
+    2: 90.55, classier_1024_2_0_1, 0.01, fine_tune
+    2: 90.94, classier_512_2_2_1, 0.01, fine_tune
+    2: 90.51, classier_256_2_4_1, 0.01, fine_tune
+    2: 90.64, classier_128_2_6_1, 0.01, fine_tune
+    2: 90.58, classier_64_2_8_1, 0.01, fine_tune
     """
-
-    _which = 0
-    _is_l2norm = False
-    _classifier_type = 2  # 0, 1, 2
-
-    _learning_rate = 0.03
-    _is_fine_tune = True
-    _fine_tune_learning_rate = 0.0001
 
     # 1
     # _low_dim = [128]
     # _name = "stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1"
-    # from stl_11_1level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # from stl_10_1level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 2
     # _low_dim = [1024, 128]
     # _name = "stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
-    # from stl_11_2level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # from stl_10_2level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 3
-    _low_dim = [1024, 512, 256]
-    _name = "stl_11_class_1024_3level_512_256_1600_no_32_1_l1_sum_0_321"
-    from stl_11_3level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # _low_dim = [1024, 512, 256]
+    # _name = "stl_11_class_1024_3level_512_256_1600_no_32_1_l1_sum_0_321"
+    # from stl_10_3level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 4
     # _low_dim = [1024, 512, 256, 128]
     # _name = "stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
-    # from stl_11_4level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # from stl_10_4level_no_memory_l2_sum import HCResNet as AttentionResNet
 
     # 5
     # _low_dim = [1024, 512, 256, 128, 64]
     # _name = "stl_11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    # from stl_11_5level_no_memory_l2_sum import HCResNet as AttentionResNet
+    # from stl_10_5level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    # 5
+    _low_dim = [1024, 512, 256, 128, 64]
+    _image_size = 96
+    _conv1_stride = 1
+    _name = "stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1"
+    from stl_10_5level_no_memory_l2_sum import HCResNet as AttentionResNet
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+    _which = 4
+    _is_l2norm = False
+    _classifier_type = 2  # 0, 1, 2
+
+    _learning_rate = 0.001
+    _is_fine_tune = False
+    _fine_tune_learning_rate = 0.01
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
@@ -423,18 +476,17 @@ if __name__ == '__main__':
 
     _net = Classifier(input_size_or_list=_input_size if _classifier_type == 0 else [_input_size, 512, 256],
                       low_dim=_low_dim, classifier_type=_classifier_type,
-                      which_out=_which_out, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
+                      input_size=_image_size, conv1_stride=_conv1_stride, which_out=_which_out,
+                      is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
-                            learning_rate=_learning_rate, fine_tune_learning_rate=_fine_tune_learning_rate,
+                            input_size=_image_size, learning_rate=_learning_rate,
+                            fine_tune_learning_rate=_fine_tune_learning_rate,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
     Tools.print('Random accuracy: {:.2f}/{:.2f}'.format(train_acc, test_acc))
-
     runner.train(start_epoch=_start_epoch, test_per_epoch=1)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
