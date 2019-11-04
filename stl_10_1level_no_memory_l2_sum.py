@@ -575,7 +575,7 @@ if __name__ == '__main__':
     _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/stl_10_class_128_3level_1600_no_32_1_l1_sum_0_1_96_1/ckpt.t7"
-    _name = "stl_10_class_{}_3level_{}_no_{}_{}_l1_sum_{}_{}_{}_{}".format(
+    _name = "stl_10_class_{}_1level_{}_no_{}_{}_l1_sum_{}_{}_{}_{}".format(
         _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1,
         1 if _is_adjust_lambda else 0, _ratio, _input_size, _conv1_stride)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)

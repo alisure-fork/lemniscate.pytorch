@@ -289,13 +289,13 @@ class HCRunner(object):
 
                 params = [_ for _ in self.net.module.parameters()]
                 loss_1, loss_1_1, loss_1_2 = self.criterion(
-                    feature_dict[FeatureName.Logits1], targets, params[-5], _l1_lambda_)
+                    feature_dict[FeatureName.Logits1], targets, params[-4], _l1_lambda_)
                 loss_2, loss_2_1, loss_2_2 = self.criterion(
-                    feature_dict[FeatureName.Logits2], targets2, params[-4], _l1_lambda_)
+                    feature_dict[FeatureName.Logits2], targets2, params[-3], _l1_lambda_)
                 loss_3, loss_3_1, loss_3_2 = self.criterion(
-                    feature_dict[FeatureName.Logits3], targets3, params[-3], _l1_lambda_)
+                    feature_dict[FeatureName.Logits3], targets3, params[-2], _l1_lambda_)
                 loss_4, loss_4_1, loss_4_2 = self.criterion(
-                    feature_dict[FeatureName.Logits4], targets4, params[-2], _l1_lambda_)
+                    feature_dict[FeatureName.Logits4], targets4, params[-1], _l1_lambda_)
 
                 avg_loss_1.update(loss_1.item(), inputs.size(0))
                 avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))

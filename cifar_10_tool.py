@@ -179,6 +179,65 @@ class CIFAR100Instance(datasets.CIFAR100):
     pass
 
 
+class STL10Instance(datasets.STL10):
+
+    def __getitem__(self, index):
+        if hasattr(self, "data") and hasattr(self, "labels"):
+            if self.labels is not None:
+                img, target = self.data[index], int(self.labels[index])
+            else:
+                img, target = self.data[index], None
+        else:
+            if self.train:
+                img, target = self.train_data[index], self.train_labels[index]
+            else:
+                img, target = self.test_data[index], self.test_labels[index]
+            pass
+
+        img = Image.fromarray(np.transpose(img, (1, 2, 0)))
+
+        if self.transform is not None:
+            img = self.transform(img)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target, index
+
+    @staticmethod
+    def data(data_root, batch_size=128, input_size=32, is_test_train_shuffle=False):
+        Tools.print('==> Preparing data..')
+
+        transform_train = transforms.Compose([
+            transforms.RandomResizedCrop(size=input_size, scale=(0.2, 1.)),
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+
+        class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+        train_set = STL10Instance(root=data_root, split="unlabeled", download=True, transform=transform_train)
+        test_train_set = STL10Instance(root=data_root, split="train", download=True,
+                                       transform=transform_train if is_test_train_shuffle else transform_test)
+        test_test_set = STL10Instance(root=data_root, split="test", download=True, transform=transform_test)
+
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
+        test_train_loader = torch.utils.data.DataLoader(test_train_set, batch_size,
+                                                        shuffle=is_test_train_shuffle, num_workers=2)
+        test_test_loader = torch.utils.data.DataLoader(test_test_set, batch_size, shuffle=False, num_workers=2)
+        return train_set, train_loader, test_train_set, test_train_loader, test_test_set, test_test_loader, class_name
+
+    pass
+
+
 class HCLoss(nn.Module):
 
     def __init__(self):
@@ -247,8 +306,9 @@ class KNN(object):
         n_sample = train_loader.dataset.__len__()
         out_memory_list = [torch.rand(n_sample, low_dim).t().cuda() for low_dim in low_dim_list]
 
-        targets = train_loader.dataset.train_labels if hasattr(
-            train_loader.dataset, "train_labels") else train_loader.dataset.targets
+        targets = train_loader.dataset.train_labels if hasattr(train_loader.dataset, "train_labels") else(
+            train_loader.dataset.targets if hasattr(train_loader.dataset, "targets") else train_loader.dataset.labels)
+
         train_labels = torch.LongTensor(targets).cuda()
         max_c = train_labels.max() + 1
 

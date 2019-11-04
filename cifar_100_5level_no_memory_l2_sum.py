@@ -592,10 +592,10 @@ class HCRunner(object):
                 targets5 = self.produce_class5.get_label(indexes)
 
                 params = [_ for _ in self.net.module.parameters()]
-                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-3], _l1_lambda_)
-                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-2], _l1_lambda_)
-                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-1], _l1_lambda_)
-                loss_4, loss_4_1, loss_4_2 = self.criterion(out_logits4, targets4, params[-1], _l1_lambda_)
+                loss_1, loss_1_1, loss_1_2 = self.criterion(out_logits, targets, params[-5], _l1_lambda_)
+                loss_2, loss_2_1, loss_2_2 = self.criterion(out_logits2, targets2, params[-4], _l1_lambda_)
+                loss_3, loss_3_1, loss_3_2 = self.criterion(out_logits3, targets3, params[-3], _l1_lambda_)
+                loss_4, loss_4_1, loss_4_2 = self.criterion(out_logits4, targets4, params[-2], _l1_lambda_)
                 loss_5, loss_5_1, loss_5_2 = self.criterion(out_logits5, targets5, params[-1], _l1_lambda_)
 
                 avg_loss_1.update(loss_1.item(), inputs.size(0))
