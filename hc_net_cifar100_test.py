@@ -34,14 +34,19 @@ class CIFAR100Instance(data_set.CIFAR100):
     @staticmethod
     def data(data_root, is_train_shuffle=True, batch_size=128):
         Tools.print('==> Preparing data..')
+        # transform_train = transforms.Compose([
+        #     transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
+        #     transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
+        #     transforms.RandomGrayscale(p=0.2),
+        #     transforms.RandomHorizontalFlip(),
+        #     transforms.ToTensor(),
+        #     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        # ])
+
         transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
-            transforms.RandomGrayscale(p=0.2),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-        ])
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(), transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
 
         transform_test = transforms.Compose([
             transforms.ToTensor(),
@@ -198,28 +203,24 @@ class ClassierRunner(object):
             self.learning_rate = fine_tune_learning_rate
             pass
 
-        self.train_set, self.train_loader, self.test_set, self.test_loader, _ = CIFAR100Instance.data(
-            self.data_root, is_train_shuffle=True, batch_size=64)
-        self.train_num = self.train_set.__len__()
-
-        self.net = net.cuda()
-        self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
-
+        self.max_epoch = max_epoch
+        self.net = torch.nn.DataParallel(net.cuda())
         self._load_model(self.net)
-
         self.criterion = nn.CrossEntropyLoss().cuda()  # define loss function
         self.optimizer = optimizer.SGD(filter(lambda p: p.requires_grad, self.net.parameters()),
                                        lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
 
-        self.max_epoch = max_epoch
+        self.train_set, self.train_loader, self.test_set, self.test_loader, _ = CIFAR100Instance.data(
+            self.data_root, is_train_shuffle=True, batch_size=64)
+        self.train_num = self.train_set.__len__()
         pass
 
     def _adjust_learning_rate(self, epoch):
-        if epoch < 50:
+        if epoch < 100:
             learning_rate = self.learning_rate
-        elif epoch < 100:
+        elif epoch < 200:
             learning_rate = self.learning_rate * 0.1
-        elif epoch < 150:
+        elif epoch < 300:
             learning_rate = self.learning_rate * 0.01
         else:
             learning_rate = self.learning_rate * 0.001
@@ -260,12 +261,14 @@ class ClassierRunner(object):
         total = 0
         correct = 0
         loader = self.test_loader if is_test_test else self.train_loader
-        for batch_idx, (inputs, targets, _) in enumerate(loader):
-            inputs, targets = inputs.cuda(), targets.cuda()
-            outputs = self.net(inputs)
-            _, predicted = outputs.max(1)
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+        with torch.no_grad():
+            for batch_idx, (inputs, targets, _) in enumerate(loader):
+                inputs, targets = inputs.cuda(), targets.cuda()
+                outputs = self.net(inputs)
+                _, predicted = outputs.max(1)
+                total += targets.size(0)
+                correct += predicted.eq(targets).sum().item()
+                pass
             pass
         Tools.print("Epoch {} {} {}/({}-{})".format(epoch, " Test" if is_test_test else "Train",
                                                     correct/total, correct, total))
@@ -283,13 +286,12 @@ class ClassierRunner(object):
         for batch_idx, (inputs, targets, _) in enumerate(self.train_loader):
             inputs, targets = inputs.cuda(), targets.cuda()
             self.optimizer.zero_grad()
-
             out_logits = self.net(inputs)
-
             loss = self.criterion(out_logits, targets)
-            avg_loss.update(loss.item(), inputs.size(0))
             loss.backward()
             self.optimizer.step()
+
+            avg_loss.update(loss.item(), inputs.size(0))
             pass
 
         Tools.print('Epoch: [{}-{}] Loss: {avg_loss.val:.4f} ({avg_loss.avg:.4f})'.format(
@@ -320,22 +322,34 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     # 0.5247 1393 hc_cifar100_5_dim_1024_512_256_128_64_ratio_54321_epoch_1600_bz_32_bias_1_lambda_0_sum
     2: 0.6144 classier_1024_2_0_0
     2: 0.7118 classier_1024_2_0_0 fine tune
-    2: 0.6618 classier_1024_2_0_0 init
-    
+    2: 0.7683 classier_1024_2_0_0_1 init
     2: 0.6029 classier_64_2_4_0
     2: 0.7110 classier_64_2_4_0 fine tune
     2: 0.xxxx classier_64_2_4_0 init
+    
+    # 0.5534 1406 hc_cifar100_3_dim_4096_2048_1024_ratio_321_epoch_1600_bz_64_bias_1_lambda_0_sum
+    2: 0.6186 classier_4096_2_0_0_0
+    2: 0.xxxx classier_4096_2_0_0_0 fine tune
+    2: 0.xxxx classier_4096_2_0_0_0 init
+    2: 0.6143 classier_1024_2_2_0
+    2: 0.7178 classier_1024_2_2_0_1 fine tune
+    2: 0.6898 classier_1024_2_2_0_1 init
     """
 
     # 1
-    _low_dim = [1024, 512, 256, 128, 64]
-    _name = "hc_cifar100_5_dim_1024_512_256_128_64_ratio_54321_epoch_1600_bz_32_bias_1_lambda_0_sum"
+    # _low_dim = [1024, 512, 256, 128, 64]
+    # _name = "hc_cifar100_5_dim_1024_512_256_128_64_ratio_54321_epoch_1600_bz_32_bias_1_lambda_0_sum"
+    # from hc_net_cifar import HCResNet as AttentionResNet
+
+    # 2
+    _low_dim = [4096, 2048, 1024]
+    _name = "hc_cifar100_3_dim_4096_2048_1024_ratio_321_epoch_1600_bz_64_bias_1_lambda_0_sum"
     from hc_net_cifar import HCResNet as AttentionResNet
 
     _which = 0
@@ -344,14 +358,14 @@ if __name__ == '__main__':
     _learning_rate = 0.01
     _is_fine_tune = True
     _fine_tune_learning_rate = 0.01
-    # _pre_train_path = None
-    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    _pre_train_path = None
+    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     _which_out = [_which, (1 if _is_l2norm else 0)]
     _input_size = _low_dim[_which]  # first input size
 
     _start_epoch = 0  # train epoch
-    _max_epoch = 200
+    _max_epoch = 300
     _linear_bias = False
 
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}_{}.t7".format(

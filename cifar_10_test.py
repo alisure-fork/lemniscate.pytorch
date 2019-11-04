@@ -180,7 +180,7 @@ class Classifier(nn.Module):
 
 class ClassierRunner(object):
 
-    def __init__(self, net, learning_rate=0.03, max_epoch=1000, resume=False, is_fine_tune=False,
+    def __init__(self, net, learning_rate=0.01, max_epoch=1000, resume=False, is_fine_tune=False,
                  pre_train_path=None, checkpoint_path="./classier.t7", data_root='./data'):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
@@ -317,7 +317,7 @@ class ClassierRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     0: 0.8269/0.8501  # 9_class_2048_norm_count_3level_512_128_lr_1000
@@ -438,7 +438,7 @@ if __name__ == '__main__':
     """
 
     _which = 4
-    _is_l2norm = False
+    _is_l2norm = True
     _is_fine_tune = False
     _classifier_type = 2  # 0, 1, 2
 
@@ -484,8 +484,8 @@ if __name__ == '__main__':
 
     # 9
     _low_dim = [1024, 512, 256, 128, 64]
-    _name = "11_class_1024_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    from cifar_10_5level_no_memory_l2_sum import HCResNet as AttentionResNet
+    _name = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
+    from cifar_10_5level_z import HCResNet as AttentionResNet
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
@@ -508,14 +508,11 @@ if __name__ == '__main__':
                       which_out=_which_out, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
     Tools.print('Random accuracy: {:.2f}/{:.2f}'.format(train_acc, test_acc))
-
     runner.train(start_epoch=_start_epoch, test_per_epoch=1)
-
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)
