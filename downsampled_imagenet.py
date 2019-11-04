@@ -214,13 +214,13 @@ class DownSampledImageNetInstance(datasets.VisionDataset):
         Tools.print('==> Preparing data..')
 
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.)),
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4), transforms.RandomGrayscale(p=0.2),
-            transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
+        # transform_train = transforms.Compose([
+        #     transforms.RandomResizedCrop(size=image_size, scale=(0.2, 1.)),
+        #     transforms.ColorJitter(0.4, 0.4, 0.4, 0.4), transforms.RandomGrayscale(p=0.2),
+        #     transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
 
-        # transform_train = transforms.Compose([transforms.RandomResizedCrop(image_size),
-        #                                       transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
+        transform_train = transforms.Compose([transforms.RandomResizedCrop(image_size),
+                                              transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
 
         transform_test = transforms.Compose([transforms.Resize(image_size),
                                              transforms.CenterCrop(image_size), transforms.ToTensor(), normalize])

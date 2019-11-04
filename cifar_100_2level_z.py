@@ -327,10 +327,10 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim, _low_dim2 = 4096, 2048
+    _low_dim, _low_dim2 = 4096, 2048
     # _low_dim, _low_dim2 = 4096 * 2, 2048 * 2
     # _low_dim, _low_dim2 = 4096 // 2, 2048 // 2
-    _low_dim, _low_dim2 = 4096 // 4, 2048 // 4
+    # _low_dim, _low_dim2 = 4096 // 4, 2048 // 4
     _ratio1, _ratio2 = 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -342,7 +342,7 @@ if __name__ == '__main__':
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
 
-    _name = "11_class_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}_134".format(
+    _name = "11_cifar100_class_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}_134".format(
         _low_dim, _low_dim2, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)

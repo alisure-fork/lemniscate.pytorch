@@ -248,7 +248,7 @@ class KNN(object):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 
-                    out_logits, out_l2norm, out_logits2, out_l2norm2 = net(inputs)
+                    out_logits, out_l2norm = net(inputs)
                     dist = torch.mm(out_l2norm, out_memory)
                     top1, top5, retrieval_one_hot = _cal(inputs, dist, train_labels, retrieval_one_hot, top1, top5)
                     pass
@@ -550,13 +550,9 @@ class HCRunner(object):
 if __name__ == '__main__':
 
     """
-    # 11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134 1585
-    56.72(4096, 17321/4034) 57.31(2048, 15371/3438) 56.24(1024, 15594/3501) test k=200
-    62.37(4096, 17321/4034) 67.72(2048, 15371/3438) 65.95(1024, 15594/3501) train k=200
-    57.90(4096, 17321/4034) 58.14(2048, 15371/3438) 57.17(1024, 15594/3501) test k=100
-    66.48(4096, 17321/4034) 71.87(2048, 15371/3438) 69.97(1024, 15594/3501) train k=100
-    58.41(4096, 17321/4034) 58.50(2048, 15371/3438) 57.39(1024, 15594/3501) test k=50
-    70.68(4096, 17321/4034) 75.86(2048, 15371/3438) 73.96(1024, 15594/3501) train k=50
+    # 11_cifar100_class_4096_1600_no_32_1_l1_sum_0_1_134 1583
+    53.40(4096, 16874/5129) test k=200
+    71.11(4096, 17321/4034) train k=200
     """
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -566,10 +562,10 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim = 4096
+    _low_dim = 4096
     # _low_dim = 4096 * 2
     # _low_dim = 4096 // 2
-    _low_dim = 4096 // 4
+    # _low_dim = 4096 // 4
     _ratio1 = 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -581,7 +577,7 @@ if __name__ == '__main__':
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
 
-    _name = "11_class_{}_{}_no_{}_{}_l1_sum_{}_{}_134".format(
+    _name = "11_cifar100_class_{}_{}_no_{}_{}_l1_sum_{}_{}_134".format(
         _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 

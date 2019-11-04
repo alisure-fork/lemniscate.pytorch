@@ -380,10 +380,10 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim, _low_dim2, _low_dim3 = 4096, 2048, 1024
+    _low_dim, _low_dim2, _low_dim3 = 4096, 2048, 1024
     # _low_dim, _low_dim2, _low_dim3 = 4096 * 2, 2048 * 2, 1024 * 2
     # _low_dim, _low_dim2, _low_dim3 = 4096 // 2, 2048 // 2, 1024 // 2
-    _low_dim, _low_dim2, _low_dim3 = 4096 // 4, 2048 // 4, 1024 // 4
+    # _low_dim, _low_dim2, _low_dim3 = 4096 // 4, 2048 // 4, 1024 // 4
     _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -393,7 +393,7 @@ if __name__ == '__main__':
     _has_l1 = True
     _linear_bias = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_cifar100_class_2048_1024_512_1600_no_32_1_l1_sum_0_321_134/ckpt.t7"
+    # _pre_train = "./checkpoint/11_cifar100_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134/ckpt.t7"
 
     _name = "11_cifar100_class_{}_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}_134".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,

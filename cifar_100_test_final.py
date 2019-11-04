@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optimizer
 from alisuretool.Tools import Tools
-from cifar_10_tool import HCBasicBlock, AverageMeter, CIFAR10Instance, FeatureName
+from cifar_10_tool import HCBasicBlock, AverageMeter, CIFAR100Instance, FeatureName
 
 
 class MultipleNonLinearClassifier(nn.Module):
@@ -99,10 +99,10 @@ class ClassierRunner(object):
         self.best_acc = 0
 
         if self.is_fine_tune:
-            self.learning_rate = 0.001
+            self.learning_rate = 0.001 if self.pre_train_path else 0.01
             pass
 
-        self.train_set, self.train_loader, self.test_set, self.test_loader, _ = CIFAR10Instance.data(
+        self.train_set, self.train_loader, self.test_set, self.test_loader, _ = CIFAR100Instance.data(
             self.data_root, is_train_shuffle=True)
         self.train_num = self.train_set.__len__()
 
@@ -225,12 +225,56 @@ class ClassierRunner(object):
 
 if __name__ == '__main__':
 
-    _low_dim = [1024, 512, 256, 128, 64]
-    _name = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    from cifar_10_5level_z import HCResNet
-
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    _which = 0
+
+    # 1
+    # _low_dim = [4096]
+    # _name = "11_cifar100_class_4096_1600_no_32_1_l1_sum_0_1_134"
+    # from cifar_100_2level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]]]
+
+    # 2
+    # _low_dim = [4096, 2048]
+    # _name = "11_cifar100_class_4096_2048_1600_no_32_1_l1_sum_0_21_134"
+    # from cifar_100_2level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+    # #                  [FeatureName.Logits2, _low_dim[1]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]]]
+
+    # 3
+    # _low_dim = [4096, 2048, 1024]
+    # _name = "11_cifar100_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134"
+    # from cifar_100_3level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]]]
+
+    # 4
+    # _low_dim = [4096, 2048, 1024, 512]
+    # _name = "11_cifar100_class_4096_2048_1024_512_1600_no_32_1_l1_sum_0_4321_134"
+    # from cifar_100_4level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
+    # #                  [FeatureName.Logits4, _low_dim[3]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
+    #                  [FeatureName.L2norm4, _low_dim[3]]]
+
+    # 5
+    _low_dim = [4096, 2048, 1024, 512, 256]
+    _name = "11_cifar100_class_4096_2048_1024_512_256_1600_no_32_1_l1_sum_0_54321_134"
+    from cifar_100_5level_z import HCResNet
     # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
     #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
     #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
@@ -239,9 +283,10 @@ if __name__ == '__main__':
                      [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
                      [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
                      [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
+
+    _which = 4
     _feature_name = _feature_list[_which][0]
     _input_size = _feature_list[_which][1]
-
     _is_fine_tune = True
 
     _start_epoch = 0  # train epoch

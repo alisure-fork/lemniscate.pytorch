@@ -577,15 +577,11 @@ class HCRunner(object):
 if __name__ == '__main__':
 
     """
-    # 11_class_4096_2048_1024_1600_no_32_1_l1_sum_0_321_134 1585
-    56.72(4096, 17321/4034) 57.31(2048, 15371/3438) 56.24(1024, 15594/3501) test k=200
-    62.37(4096, 17321/4034) 67.72(2048, 15371/3438) 65.95(1024, 15594/3501) train k=200
-    57.90(4096, 17321/4034) 58.14(2048, 15371/3438) 57.17(1024, 15594/3501) test k=100
-    66.48(4096, 17321/4034) 71.87(2048, 15371/3438) 69.97(1024, 15594/3501) train k=100
-    58.41(4096, 17321/4034) 58.50(2048, 15371/3438) 57.39(1024, 15594/3501) test k=50
-    70.68(4096, 17321/4034) 75.86(2048, 15371/3438) 73.96(1024, 15594/3501) train k=50
+    # 11_cifar100_class_4096_2048_1600_no_32_1_l1_sum_0_21_134 1570
+    56.38(4096, 17047/4086) 55.53(2048, 16245/4229) test k=200
+    69.84(4096, 17321/4034) 68.67(2048, 15371/3438) train k=200
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _start_epoch = 0
     _resume = False
@@ -593,10 +589,10 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim, _low_dim2 = 4096, 2048
+    _low_dim, _low_dim2 = 4096, 2048
     # _low_dim, _low_dim2 = 4096 * 2, 2048 * 2
     # _low_dim, _low_dim2 = 4096 // 2, 2048 // 2
-    _low_dim, _low_dim2 = 4096 // 4, 2048 // 4
+    # _low_dim, _low_dim2 = 4096 // 4, 2048 // 4
     _ratio1, _ratio2 = 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -606,9 +602,9 @@ if __name__ == '__main__':
     _has_l1 = True
     _linear_bias = False
     _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
+    # _pre_train = "./checkpoint/11_cifar100_class_4096_2048_1600_no_32_1_l1_sum_0_21_134/ckpt.t7"
 
-    _name = "11_class_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}_134".format(
+    _name = "11_cifar100_class_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}_134".format(
         _low_dim, _low_dim2, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)

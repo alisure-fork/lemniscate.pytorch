@@ -299,7 +299,7 @@ if __name__ == '__main__':
     58.41(4096, 17321/4034) 58.50(2048, 15371/3438) 57.39(1024, 15594/3501) test k=50
     70.68(4096, 17321/4034) 75.86(2048, 15371/3438) 73.96(1024, 15594/3501) train k=50
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _start_epoch = 0
     _resume = True
@@ -307,10 +307,10 @@ if __name__ == '__main__':
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
-    # _low_dim = 4096
+    _low_dim = 4096
     # _low_dim = 4096 * 2
     # _low_dim = 4096 // 2
-    _low_dim = 4096 // 4
+    # _low_dim = 4096 // 4
     _ratio1 = 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
@@ -322,7 +322,7 @@ if __name__ == '__main__':
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
 
-    _name = "11_class_{}_{}_no_{}_{}_l1_sum_{}_{}_134".format(
+    _name = "11_cifar100_class_{}_{}_no_{}_{}_l1_sum_{}_{}_134".format(
         _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 

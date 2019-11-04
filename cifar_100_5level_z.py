@@ -381,7 +381,7 @@ if __name__ == '__main__':
     56.15(4096) 56.12(2048) 55.58(1024) 55.37(512) 55.54(256) test k=200
     57.94(4096) 58.78(2048) 57.12(1024) 56.49(512) 59.48(256) train k=200
     """
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _start_epoch = 0
     _resume = True
