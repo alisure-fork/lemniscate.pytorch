@@ -47,7 +47,7 @@ class HCResNet(nn.Module):
         avgPool = avgPool.view(avgPool.size(0), -1)
         out_l2norm0 = self.l2norm(avgPool)
 
-        out_logits = self.linear_1024(avgPool)
+        out_logits = self.linear_512(avgPool)
         out_l2norm = self.l2norm(out_logits)
 
         out_logits2 = self.linear_128(out_logits)
@@ -336,8 +336,29 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_1024_4level_512_256_128_1600_no_32_1_l1_sum_0_4321
-    87.73(1024) 87.91(512) 87.95(256) 87.69(128)
+    # 11_class_1024_3level_256_64_1000_no_memory_1_l1_sum
+    85.93(1024, 13462/1716) 85.99(256, 13462/1716) 86.20(64, 12505/2035)
+
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_333
+    88.20(1024, 15770/2614) 88.21(256, 10121/769) 86.61 (64, 7463/1141)
+
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_555 1380
+    88.01(1024, x) 88.07(256, x) 83.61 (64, x)
+    
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_1_321
+    87.25(1024) 87.19(256) 87.24(64)
+    
+    # 11_class_1024_3level_256_64_1600_no_128_1_l1_sum_1_321
+    84.75(1024) 84.88(256) 84.74(64)
+
+
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321
+    87.64(1024, 17809/3045) 87.65(256, 13821/1756) 87.59(64, 12949/1997)
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321
+    88.41(1024, 16684/2523) 88.63(256, 12625/1250) 88.36(64, 11818/1902)
+    # 11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321
+    88.60(512) 88.47(1024) 88.62(256) 88.45(64)
+
     """
 
     _start_epoch = 0
@@ -353,9 +374,9 @@ if __name__ == '__main__':
     _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
-    _resume = True
-    _pre_train = None
-    # _pre_train = "./checkpoint/11_class_1024_256_64_1600_no_32_1_l1_sum_1_321/ckpt.t7"
+    _resume = False
+    # _pre_train = None
+    _pre_train = "./checkpoint/11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321/ckpt.t7"
     _name = "11_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
         0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3)

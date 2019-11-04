@@ -57,13 +57,14 @@ class HCBasicBlock(nn.Module):
 
 class HCResNet(nn.Module):
 
-    def __init__(self, block, num_blocks, low_dim=512, linear_bias=True):
+    def __init__(self, block, num_blocks, low_dim=512, linear_bias=True, input_size=32, conv1_stride=1):
         super(HCResNet, self).__init__()
         self.in_planes = 64
+        self.input_size = input_size
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=conv1_stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=2 if self.input_size > 32 else 1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
@@ -85,7 +86,8 @@ class HCResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        # out = F.avg_pool2d(out, 4)
+        out = F.adaptive_avg_pool2d(out, (1, 1))
         out = out.view(out.size(0), -1)
         out_logits = self.linear_1024(out)
         out_l2norm = self.l2norm(out_logits)
@@ -147,11 +149,11 @@ class STL10Instance(datasets.STL10):
         return img, target, index
 
     @staticmethod
-    def data(data_root, batch_size=128):
+    def data(data_root, batch_size=128, input_size=32):
         Tools.print('==> Preparing data..')
 
         transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(size=32, scale=(0.2, 1.)),
+            transforms.RandomResizedCrop(size=input_size, scale=(0.2, 1.)),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
             transforms.RandomGrayscale(p=0.2),
             transforms.RandomHorizontalFlip(),
@@ -160,7 +162,7 @@ class STL10Instance(datasets.STL10):
         ])
 
         transform_test = transforms.Compose([
-            transforms.Resize(32),
+            transforms.Resize(input_size),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
@@ -319,8 +321,8 @@ class ProduceClass(object):
 
 class HCRunner(object):
 
-    def __init__(self, low_dim=512, ratio=1, batch_size=128,
-                 is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
+    def __init__(self, low_dim=512, ratio=1, batch_size=128, input_size=32, conv1_stride=1,
+                 is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200,
                  resume=False, checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data'):
         self.learning_rate = learning_rate
@@ -332,6 +334,8 @@ class HCRunner(object):
 
         self.low_dim = low_dim
         self.ratio = ratio
+        self.input_size = input_size
+        self.conv1_stride = conv1_stride
 
         self.t_epoch = t_epoch
         self.max_epoch = max_epoch
@@ -340,15 +344,18 @@ class HCRunner(object):
         self.has_l1 = has_l1
         self.l1_lambda = l1_lambda
         self.is_adjust_lambda = is_adjust_lambda
+        self.is_loss_sum = is_loss_sum
 
         self.best_acc = 0
 
         (self.train_set, self.train_loader, self.test_train_set, self.test_train_loader,
          self.test_test_set, self.test_test_loader, self.class_name) = STL10Instance.data(
-            self.data_root, batch_size=self.batch_size)
+            self.data_root, batch_size=self.batch_size, input_size=self.input_size)
+
         self.train_num = self.train_set.__len__()
 
-        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, linear_bias=linear_bias).cuda()
+        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, linear_bias=linear_bias,
+                            input_size=self.input_size, conv1_stride=self.conv1_stride).cuda()
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
@@ -511,7 +518,7 @@ class HCRunner(object):
         # Test
         try:
             Tools.print("Test [{}] .......".format(epoch))
-            _acc = self.test(epoch=epoch)
+            _acc = self.test(epoch=epoch, loader_n=2)
             if _acc > self.best_acc:
                 Tools.print('Saving..')
                 state = {'net': self.net.state_dict(), 'acc': _acc, 'epoch': epoch}
@@ -535,31 +542,42 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # stl_11_class_128_1level_1600_no_32_1_l1_sum_0_1
-    76.88(128, 28433/3525)
+    # stl_10_class_128_3level_1600_no_32_1_l1_sum_0_1_96_1
+    # 2019-11-02 20:53:44 Update label 1578 .......
+    # 2019-11-02 20:55:24 Epoch: [1578] 1-23399/4223
+    # 2019-11-02 20:55:24 Epoch: 1578 lr=2.678121912202042e-05 lambda=0.0
+    # 2019-11-02 20:59:07 Epoch: 1578/3125 Loss 1: 0.8515(0.8515/22.3298)
+    # 2019-11-02 20:59:07 Test [1578] .......
+    # 2019-11-02 20:59:16 Test 1 1578 Top1=79.79 Top5=99.12
+    # 2019-11-02 20:59:19 Test 1 1578 Top1=85.36 Top5=100.00
+    # 2019-11-02 20:59:19 Saving..
+    # 2019-11-02 20:59:19 Epoch: [1578] best accuracy: 79.79
     """
 
-    _start_epoch = 1000
+    _start_epoch = 0
     _max_epoch = 1600
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 200, 100
+    _input_size = 96
+    _conv1_stride = 1  # 1
     _low_dim = 128
     _ratio = 1
-    _l1_lambda = 0.5
-    _is_adjust_lambda = True
+    _l1_lambda = 0.0
+    _is_adjust_lambda = False
 
     _batch_size = 32
+    _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
     _resume = False
-    # _pre_train = None
-    _pre_train = "./checkpoint/stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1/ckpt.t7"
-    _name = "stl_11_class_{}_1level_{}_no_{}_{}_l1_sum_{}_{}".format(
-        _low_dim, _max_epoch, _batch_size,
-        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio)
+    _pre_train = None
+    # _pre_train = "./checkpoint/stl_10_class_128_3level_1600_no_32_1_l1_sum_0_1_96_1/ckpt.t7"
+    _name = "stl_10_class_{}_3level_{}_no_{}_{}_l1_sum_{}_{}_{}_{}".format(
+        _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1,
+        1 if _is_adjust_lambda else 0, _ratio, _input_size, _conv1_stride)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
@@ -570,9 +588,8 @@ if __name__ == '__main__':
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = HCRunner(low_dim=_low_dim, ratio=_ratio,
-                      linear_bias=_linear_bias, has_l1=_has_l1,
-                      l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
+    runner = HCRunner(low_dim=_low_dim, ratio=_ratio, linear_bias=_linear_bias, has_l1=_has_l1, input_size=_input_size,
+                      conv1_stride=_conv1_stride, l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
                       batch_size=_batch_size, learning_rate=_learning_rate,
                       max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
                       resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
