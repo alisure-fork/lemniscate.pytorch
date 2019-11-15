@@ -228,23 +228,23 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     # 1
-    # _low_dim = [128]
-    # _name = "11_class_128_1level_1600_no_32_1_l1_sum_0_1"
-    # from cifar_10_1level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]]]
+    _low_dim = [128]
+    _name = "11_class_128_1level_1600_no_32_1_l1_sum_0_1"
+    from cifar_10_1level_z import HCResNet
     # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]]]
-    # 2
-    _low_dim = [1024, 128]
-    _name = "11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
-    from cifar_10_2level_z import HCResNet
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    #                  [FeatureName.Logits2, _low_dim[1]]]
+    #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]]]
     _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-                     [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-                     [FeatureName.L2norm2, _low_dim[1]]]
+                     [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]]]
+    # 2
+    # _low_dim = [1024, 128]
+    # _name = "11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
+    # from cifar_10_2level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+    # #                  [FeatureName.Logits2, _low_dim[1]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]]]
     # 3
     # _low_dim = [1024, 256, 64]
     # _name = "11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321"
@@ -280,7 +280,7 @@ if __name__ == '__main__':
     #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
     #                  [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
 
-    _which = 4
+    _which = 3
     _feature_name = _feature_list[_which][0]
     _input_size = _feature_list[_which][1]
 
@@ -292,6 +292,8 @@ if __name__ == '__main__':
     _max_epoch = 200
     _linear_bias = False
 
+    _pre_train_path = None
+    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 
@@ -299,8 +301,8 @@ if __name__ == '__main__':
     Tools.print("input_size={} name={}".format(_input_size, _name))
     Tools.print("classier={}".format(_checkpoint_path_classier))
 
-    _net = Classifier(input_size_or_list=[_input_size, 512, 256], low_dim=_low_dim, feature_name=_feature_name,
-                      is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
+    _net = Classifier(input_size_or_list=[_input_size, 512, 256], low_dim=_low_dim,
+                      feature_name=_feature_name, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
     Tools.print()
