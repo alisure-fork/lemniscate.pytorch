@@ -65,7 +65,7 @@ class Cifar10TSNE(object):
     pass
 
 
-if __name__ == '__main__':
+def main():
     _checkpoint_path = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
 
     is_train = False
@@ -80,4 +80,30 @@ if __name__ == '__main__':
     Tools.print("{}".format(_result_png))
     cifar_t_sne = Cifar10TSNE()
     cifar_t_sne.t_sne(_feature_file, _feature_name, _result_file, _result_png, s="●", reset=False)
+    pass
+
+
+def show_dot():
+    color = ["g", "r", "c", "m", "y", "k", "sienna", "orange", "lawngreen", "deepskyblue", "lightcoral", "b"]
+    class_name = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    fig = plt.figure()
+    for i, c in enumerate(color):
+        if i < 10:
+            # plt.text(0.4, 0.05 * i + 0.2, "● " + class_name[i], color=c, fontdict={'size': 10})
+            plt.text(0.4, 0.05 * i + 0.2, "● ", color=c, fontdict={'size': 10})
+            plt.text(0.435, 0.05 * i + 0.196, class_name[i], color="k", fontdict={'size': 10})
+        pass
+
+    plt.axis('off')
+    plt.xticks([])
+    plt.yticks([])
+
+    # plt.show()
+    plt.savefig("dot.png", dpi=200)
+    pass
+
+
+if __name__ == '__main__':
+    show_dot()
+
     pass
