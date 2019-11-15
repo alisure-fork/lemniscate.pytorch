@@ -225,7 +225,7 @@ class ClassierRunner(object):
 
 if __name__ == '__main__':
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     # 1
     # _low_dim = [4096]
@@ -284,17 +284,18 @@ if __name__ == '__main__':
                      [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
                      [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
 
-    _which = 4
+    _which = 7
     _feature_name = _feature_list[_which][0]
     _input_size = _feature_list[_which][1]
+
     _is_fine_tune = True
+    # _pre_train_path = None
+    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     _start_epoch = 0  # train epoch
     _max_epoch = 200
     _linear_bias = False
 
-    # _pre_train_path = None
-    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 

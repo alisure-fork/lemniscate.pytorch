@@ -254,27 +254,27 @@ if __name__ == '__main__':
     #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
     #                  [FeatureName.L2norm2, _low_dim[1]]]
     # 3
-    # _low_dim = [1024, 256, 64]
-    # _name = "11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321"
-    # from cifar_10_3level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]]]
-    # 4
-    _low_dim = [1024, 512, 256, 128]
-    _name = "stl_10_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321_96_1"
-    from stl_10_4level_z import HCResNet
+    _low_dim = [1024, 256, 64]
+    _name = "11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321"
+    from stl_10_3level_z import HCResNet
     # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
     #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
-    #                  [FeatureName.Logits4, _low_dim[3]]]
+    #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]]]
     _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
                      [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-                     [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
-                     [FeatureName.L2norm4, _low_dim[3]]]
+                     [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]]]
+    # 4
+    # _low_dim = [1024, 512, 256, 128]
+    # _name = "stl_10_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321_96_1"
+    # from stl_10_4level_z import HCResNet
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
+    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
+    # #                  [FeatureName.Logits4, _low_dim[3]]]
+    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
+    #                  [FeatureName.L2norm4, _low_dim[3]]]
     # 5
     # _low_dim = [1024, 512, 256, 128, 64]
     # _name = "stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1"
@@ -283,23 +283,23 @@ if __name__ == '__main__':
     #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
     #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
     #                  [FeatureName.Logits4, _low_dim[3]], [FeatureName.Logits5, _low_dim[4]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
-    #                  [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
+    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
+    # #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    # #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
+    # #                  [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
 
-    _which = 4
+    _which = 1
     _feature_name = _feature_list[_which][0]
     _input_size = _feature_list[_which][1]
 
     _is_fine_tune = False
+    _pre_train_path = None
+    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     _start_epoch = 0  # train epoch
     _max_epoch = 200
     _linear_bias = False
 
-    # _pre_train_path = None
-    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
     _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 
