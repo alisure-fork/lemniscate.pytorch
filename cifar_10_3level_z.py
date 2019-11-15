@@ -333,7 +333,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     """
     # 11_class_1024_3level_256_64_1000_no_memory_1_l1_sum
@@ -361,6 +361,50 @@ if __name__ == '__main__':
 
     """
 
+    """
+    10_aa_update_epoch_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321_3
+    2019-11-13 06:42:40 Epoch: 1496 lr=1.0576612466378815e-05 lambda=0.0
+    2019-11-13 06:43:30 Epoch: 1496/1563 Loss 1: 1.1910(1.1910/7.4859) Loss 2: 0.8570(0.8570/4.9217) Loss 3: 0.7633(0.7633/5.4637)
+    2019-11-13 06:43:30 Test [1496] .......
+    2019-11-13 06:43:47 Test 1496 0 Top1=87.43 Top5=99.49
+    2019-11-13 06:43:47 Test 1496 1 Top1=87.44 Top5=99.46
+    2019-11-13 06:43:47 Test 1496 2 Top1=87.50 Top5=99.46
+    2019-11-13 06:43:47 Test 1496 3 Top1=87.55 Top5=99.40
+    2019-11-13 06:43:47 Saving..
+    2019-11-13 06:43:48 Epoch: [1496] best accuracy: 87.55
+
+    10_aa_update_epoch_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321_5
+    2019-11-13 02:34:22 Epoch: 1299 lr=1.0074632744683096e-05 lambda=0.0
+    2019-11-13 02:35:13 Epoch: 1299/1563 Loss 1: 1.3100(1.3100/7.6267) Loss 2: 0.9632(0.9632/4.9993) Loss 3: 0.8744(0.8744/5.4658)
+    2019-11-13 02:35:13 Test [1299] .......
+    2019-11-13 02:35:30 Test 1299 0 Top1=86.78 Top5=99.52
+    2019-11-13 02:35:30 Test 1299 1 Top1=86.60 Top5=99.44
+    2019-11-13 02:35:30 Test 1299 2 Top1=86.67 Top5=99.47
+    2019-11-13 02:35:30 Test 1299 3 Top1=86.28 Top5=99.34
+    2019-11-13 02:35:30 Saving..
+    2019-11-13 02:35:30 Epoch: [1299] best accuracy: 86.28
+    
+    
+    
+    2019-11-13 10:15:13 name=10_aa_update_epoch_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321_1
+    2019-11-13 10:15:13 low_dim=1024 low_dim2=256 low_dim3=64
+    2019-11-13 10:15:13 ratio1=3 ratio2=2 ratio3=1
+    2019-11-13 10:15:13 learning_rate=0.01 batch_size=32
+    2019-11-13 10:15:13 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+    
+    2019-11-15 01:20:14 Update label 1589 .......
+    2019-11-15 01:20:35 Epoch: [1589] 1-15384/2751 2-10844/1323 3-10678/2041
+    2019-11-15 01:20:35 Epoch: 1589 lr=1.4323093770222264e-05 lambda=0.0
+    2019-11-15 01:21:25 Test [1589] .......
+    2019-11-15 01:21:43 Test 1589 0 Top1=88.59 Top5=99.58
+    2019-11-15 01:21:43 Test 1589 1 Top1=88.23 Top5=99.58
+    2019-11-15 01:21:43 Test 1589 2 Top1=88.28 Top5=99.57
+    2019-11-15 01:21:43 Test 1589 3 Top1=88.06 Top5=99.51
+    2019-11-15 01:21:43 Saving..
+    2019-11-15 01:21:43 Epoch: [1589] best accuracy: 88.06
+
+    """
+
     _start_epoch = 0
     _max_epoch = 1600
     _learning_rate = 0.01
@@ -369,17 +413,18 @@ if __name__ == '__main__':
     _ratio1, _ratio2, _ratio3 = 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
+    _update_epoch = 1
 
     _batch_size = 32
     _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
     _resume = False
-    # _pre_train = None
-    _pre_train = "./checkpoint/11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321/ckpt.t7"
-    _name = "11_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}".format(
+    _pre_train = None
+    # _pre_train = "./checkpoint/11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321/ckpt.t7"
+    _name = "10_aa_update_epoch_class_{}_3level_{}_{}_{}_no_{}_{}_l1_sum_{}_{}{}{}_{}".format(
         _low_dim, _low_dim2, _low_dim3, _max_epoch, _batch_size,
-        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3)
+        0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3, _update_epoch)
     _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
 
     Tools.print()
@@ -399,10 +444,10 @@ if __name__ == '__main__':
                       max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch,
                       resume=_resume, pre_train=_pre_train, checkpoint_path=_checkpoint_path)
     Tools.print()
-    # acc = runner.test()
-    # Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
-    # runner.train(start_epoch=_start_epoch, update_epoch=1)
-    # Tools.print()
+    acc = runner.test()
+    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
+    runner.train(start_epoch=_start_epoch, update_epoch=_update_epoch)
+    Tools.print()
     acc = runner.test(loader_n=2)
     Tools.print('final accuracy: {:.2f}'.format(acc * 100))
     pass
