@@ -35,7 +35,7 @@ class STL10Instance(data_set.STL10):
         return img, target, index
 
     @staticmethod
-    def data(data_root, batch_size=128, input_size=32, is_test_train_shuffle=False):
+    def data(data_root, batch_size=128, input_size=32, is_test_train_shuffle=False, few_shot_num=500):
         Tools.print('==> Preparing data..')
 
         transform_train = transforms.Compose([
@@ -59,6 +59,43 @@ class STL10Instance(data_set.STL10):
         test_train_set = STL10Instance(root=data_root, split="train", download=True,
                                        transform=transform_train if is_test_train_shuffle else transform_test)
         test_test_set = STL10Instance(root=data_root, split="test", download=True, transform=transform_test)
+
+        def random_select(labels, data, _few_shot_num):
+            data_result = []
+            labels_result = []
+
+            def choice_fn():
+                if len(now_data) >= _few_shot_num:
+                    choice = []
+                    while len(choice) < _few_shot_num:
+                        now_choice = np.random.randint(0, len(now_data))
+                        if now_choice not in choice:
+                            choice.append(now_choice)
+                        pass
+                    choice = np.asarray(choice)
+                else:
+                    choice = np.random.choice(len(now_data), _few_shot_num)
+                    pass
+                return choice
+
+            for label in set(labels):
+                now_data = data[labels == label]
+                result_data = now_data[choice_fn()]
+                data_result.extend(result_data)
+                labels_result.extend([label] * _few_shot_num)
+                pass
+
+            data_result = np.asarray(data_result)
+            labels_result = np.asarray(labels_result)
+
+            idx = np.random.permutation([i for i in range(len(labels_result))])
+            data_result = data_result[idx]
+            labels_result = labels_result[idx]
+
+            return labels_result, data_result
+
+        test_train_set.labels, test_train_set.data = random_select(test_train_set.labels,
+                                                                   test_train_set.data, few_shot_num)
 
         train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=2)
         test_train_loader = torch.utils.data.DataLoader(test_train_set, batch_size,
@@ -190,7 +227,7 @@ class Classifier(nn.Module):
 
 class ClassierRunner(object):
 
-    def __init__(self, net, learning_rate=0.03, fine_tune_learning_rate=0.001,
+    def __init__(self, net, learning_rate=0.03, fine_tune_learning_rate=0.001, few_shot_num=500,
                  max_epoch=1000, resume=False, input_size=32, is_fine_tune=False,
                  pre_train_path=None, checkpoint_path="./classier.t7", data_root='./data'):
         self.learning_rate = learning_rate
@@ -200,6 +237,7 @@ class ClassierRunner(object):
         self.is_fine_tune = is_fine_tune
         self.data_root = data_root
         self.input_size = input_size
+        self.few_shot_num = few_shot_num
 
         self.best_acc = 0
 
@@ -208,7 +246,8 @@ class ClassierRunner(object):
             pass
 
         (self.train_set, self.train_loader, self.test_train_set, self.test_train_loader,
-         self.test_test_set, self.test_test_loader, _) = STL10Instance.data(self.data_root, input_size=self.input_size)
+         self.test_test_set, self.test_test_loader, _) = STL10Instance.data(
+            self.data_root, input_size=self.input_size, is_test_train_shuffle=False, few_shot_num=self.few_shot_num)
         self.train_num = self.train_set.__len__()
 
         self.net = net.cuda()
@@ -331,132 +370,35 @@ class ClassierRunner(object):
 if __name__ == '__main__':
 
     """
-    # 0.7688 1xxx, stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1
-    2: 78.86, classier_128_2_0_0, 0.001
-    2: 82.46, classier_128_2_0_1, 0.01, fine_tune
-    2: 84.51, classier_128_2_0_1, 0.001, fine_tune
-    2: 84.28, classier_128_2_0_1, 0.0001, fine_tune
-    2: 47.11, classier_128_2_0_1, 0.01, init
-    2: 55.00, classier_128_2_0_1, 0.001, init
-    2: 37.96, classier_128_2_0_1, 0.0001, init
+    86.76 / 90.74
     
-    # 0.7973 1493, stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0
-    2: 82.25, classier_128_2_0_0, 0.001
-    2: 82.46, classier_512_2_2_0, 0.001
-    2: 85.34, classier_128_2_0_1, 0.01, fine_tune
-    2: 86.42, classier_128_2_0_1, 0.001, fine_tune
-    2: 85.65, classier_128_2_0_1, 0.0001, fine_tune
-    
-    # 0.8xxx 1xxx, stl_11_class_1024_3level_512_256_1600_no_32_1_l1_sum_0_321
-    2: 82.46, classier_128_2_0_0, 0.001
-    2: 82.31, classier_512_2_2_0, 0.001
-    2: 81.76, classier_512_2_4_0, 0.001
-    2: 87.69, classier_128_2_0_1, 0.01, fine_tune
-    2: 86.55, classier_128_2_0_1, 0.001, fine_tune
-    2: 85.32, classier_128_2_0_1, 0.0001, fine_tune
-    
-    # 0.8111 1584, stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321
-    2: 82.69, classier_128_2_0_0, 0.001
-    2: 82.38, classier_512_2_2_0, 0.001
-    2: 82.26, classier_512_2_4_0, 0.001
-    2: 82.31, classier_512_2_6_0, 0.001
-    2: 87.56, classier_128_2_0_1, 0.01, fine_tune
-    2: 86.78, classier_128_2_0_1, 0.001, fine_tune
-    2: 85.60, classier_128_2_0_1, 0.0001, fine_tune
-    
-    # 0.8070 1592, stl_11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321
-    2: 82.86, classier_128_2_0_0, 0.001
-    2: 82.42, classier_512_2_2_0, 0.001
-    2: 82.70, classier_512_2_4_0, 0.001
-    2: 82.47, classier_512_2_6_0, 0.001
-    2: 81.96, classier_512_2_8_0, 0.001
-    2: 87.41, classier_128_2_0_1, 0.01, fine_tune
-    2: 86.96, classier_128_2_0_1, 0.001, fine_tune
-    2: 86.08, classier_128_2_0_1, 0.0001, fine_tune
-    
-    # 0.8167 1597, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_2
-    2: 85.84, classier_1024_2_0_0, 0.001
-    2: 85.05, classier_512_2_2_0, 0.001
-    2: 84.91, classier_256_2_4_0, 0.001
-    2: 84.67, classier_128_2_6_0, 0.001
-    2: 84.72, classier_64_2_8_0, 0.001
-    2: 87.94, classier_1024_2_0_1, 0.001, fine_tune
-    2: 88.02, classier_512_2_2_1, 0.001, fine_tune
-    2: 88.14, classier_256_2_4_1, 0.001, fine_tune
-    2: 88.02, classier_128_2_6_1, 0.001, fine_tune
-    2: 87.91, classier_64_2_8_1, 0.001, fine_tune
-    2: 89.12, classier_1024_2_0_1, 0.01, fine_tune
-    2: 89.08, classier_512_2_2_1, 0.01, fine_tune
-    2: 88.99, classier_256_2_4_1, 0.01, fine_tune
-    2: 88.72, classier_128_2_6_1, 0.01, fine_tune
-    2: 88.84, classier_64_2_8_1, 0.01, fine_tune
-    
-    # 0.8301 1579, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_2
-    2: 85.71, classier_1024_2_0_0, 0.001
-    2: 85.70, classier_512_2_2_0, 0.001
-    2: 85.31, classier_256_2_4_0, 0.001
-    2: 85.26, classier_128_2_6_0, 0.001
-    2: 84.85, classier_64_2_8_0, 0.001
-    2: 89.72, classier_1024_2_0_1, 0.01, fine_tune
-    2: 89.68, classier_512_2_2_1, 0.01, fine_tune
-    2: 89.36, classier_256_2_4_1, 0.01, fine_tune
-    2: 89.70, classier_128_2_6_1, 0.01, fine_tune
-    2: 89.39, classier_64_2_8_1, 0.01, fine_tune
-    
-    # 0.8393 1291, stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1
-    2: 86.94, classier_1024_2_0_0, 0.001
-    2: 86.80, classier_512_2_2_0, 0.001
-    2: 86.69, classier_256_2_4_0, 0.001
-    2: 86.29, classier_128_2_6_0, 0.001
-    2: 86.40, classier_64_2_8_0, 0.001
-    2: 90.55, classier_1024_2_0_1, 0.01, fine_tune
-    2: 90.94, classier_512_2_2_1, 0.01, fine_tune
-    2: 90.51, classier_256_2_4_1, 0.01, fine_tune
-    2: 90.64, classier_128_2_6_1, 0.01, fine_tune
-    2: 90.58, classier_64_2_8_1, 0.01, fine_tune
+    0.01: 72.91/69.61 - 75.05
+     0.1: 83.30/83.67 - 85.34
+     1.0: 86.76/86.78 - 90.85
+     
+     CIFAR-10 => STL-10 52.69 - 84.55
     """
 
-    # 1
-    # _low_dim = [128]
-    # _name = "stl_11_class_128_1level_1600_no_32_1_l1_sum_1_1"
-    # from stl_10_1level_no_memory_l2_sum import HCResNet as AttentionResNet
-
-    # 2
-    # _low_dim = [1024, 128]
-    # _name = "stl_11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
-    # from stl_10_2level_no_memory_l2_sum import HCResNet as AttentionResNet
-
-    # 3
-    # _low_dim = [1024, 512, 256]
-    # _name = "stl_11_class_1024_3level_512_256_1600_no_32_1_l1_sum_0_321"
-    # from stl_10_3level_no_memory_l2_sum import HCResNet as AttentionResNet
-
-    # 4
-    # _low_dim = [1024, 512, 256, 128]
-    # _name = "stl_11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
-    # from stl_10_4level_no_memory_l2_sum import HCResNet as AttentionResNet
-
-    # 5
-    # _low_dim = [1024, 512, 256, 128, 64]
-    # _name = "stl_11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    # from stl_10_5level_no_memory_l2_sum import HCResNet as AttentionResNet
-
-    # 5
     _low_dim = [1024, 512, 256, 128, 64]
     _image_size = 96
     _conv1_stride = 1
-    _name = "stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1"
+    _name = "stl_10_few_shot_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1"
     from stl_10_5level_no_memory_l2_sum import HCResNet as AttentionResNet
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-    _which = 4
+    _which = 0
     _is_l2norm = False
     _classifier_type = 2  # 0, 1, 2
 
-    _learning_rate = 0.001
-    _is_fine_tune = False
+    _learning_rate = 0.01
+    _is_fine_tune = True
     _fine_tune_learning_rate = 0.01
+
+    # _few_shot_ratio = 0.01
+    # _few_shot_ratio = 0.1
+    _few_shot_ratio = 1.0
+    _few_shot_num = int(_few_shot_ratio * 500)
 
     _which_out = _which * 2 + (1 if _is_l2norm else 0)
     _input_size = _low_dim[_which]  # first input size
@@ -465,10 +407,10 @@ if __name__ == '__main__':
     _max_epoch = 200
     _linear_bias = False
 
-    # _pre_train_path = None
-    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
-    _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
-        _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0)
+    # _pre_train_path = "./checkpoint/stl_10_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321_96_1/ckpt.t7"
+    _pre_train_path = "./checkpoint/11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321/ckpt.t7"
+    _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}_{}.t7".format(
+        _name, _input_size, _classifier_type, _which_out, 1 if _is_fine_tune else 0, _few_shot_num)
 
     Tools.print()
     Tools.print("input_size={} name={}".format(_input_size, _name))
@@ -480,7 +422,7 @@ if __name__ == '__main__':
                       is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
                             input_size=_image_size, learning_rate=_learning_rate,
-                            fine_tune_learning_rate=_fine_tune_learning_rate,
+                            fine_tune_learning_rate=_fine_tune_learning_rate, few_shot_num=_few_shot_num,
                             pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
