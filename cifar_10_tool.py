@@ -415,7 +415,7 @@ class KNN(object):
                     pass
 
                 for i in range(len(low_dim_list)):
-                    Tools.print("Test {} {} Top1={:.2f} Top5={:.2f}".format(
+                    Tools.print("Test:  [{}] {} Top1={:.2f} Top5={:.2f}".format(
                         epoch, i, top1_list[i] * 100. / total, top5_list[i] * 100. / total))
                     pass
 

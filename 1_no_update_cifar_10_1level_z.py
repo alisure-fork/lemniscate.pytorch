@@ -50,8 +50,6 @@ class HCResNet(nn.Module):
         feature_dict = {}
         if self.is_vis:
             feature_dict[FeatureName.x] = x
-            # feature_dict[FeatureName.ConvB1] = convB1
-            # feature_dict[FeatureName.ConvB2] = convB2
             feature_dict[FeatureName.ConvB3] = convB3
             feature_dict[FeatureName.ConvB4] = convB4
             feature_dict[FeatureName.ConvB5] = convB5
@@ -215,7 +213,7 @@ class HCRunner(object):
             self.net.train()
             _learning_rate_ = self._adjust_learning_rate(epoch)
             _l1_lambda_ = self._adjust_l1_lambda(epoch)
-            Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
+            Tools.print('Epoch: [{}] lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
 
             avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
 
@@ -243,16 +241,18 @@ class HCRunner(object):
                 self.optimizer.step()
                 pass
 
-            self.produce_class1, self.produce_class2 = self.produce_class2, self.produce_class1
-            Tools.print("Epoch: [{}] 1-{}/{}".format(epoch, self.produce_class2.count, self.produce_class2.count_2))
-            Tools.print('Epoch: [{}] {} Loss 1: {:.4f}({:.4f}/{:.4f})'.format(
+            classes = self.produce_class2.classes
+            self.produce_class2.classes = self.produce_class1.classes
+            self.produce_class1.classes = classes
+            Tools.print("Train: [{}] 1-{}/{}".format(epoch, self.produce_class1.count, self.produce_class1.count_2))
+            Tools.print('Train: [{}] {} Loss 1: {:.4f}({:.4f}/{:.4f})'.format(
                 epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg))
         finally:
             pass
 
         # Test
         try:
-            Tools.print("Test [{}] .......".format(epoch))
+            Tools.print("Test:  [{}] .......".format(epoch))
             _acc = self.test(epoch=epoch)
             if _acc > self.best_acc:
                 Tools.print('Saving..')
@@ -260,10 +260,9 @@ class HCRunner(object):
                 torch.save(state, self.checkpoint_path)
                 self.best_acc = _acc
                 pass
-            Tools.print('Epoch: [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc * 100))
+            Tools.print('Test:  [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc * 100))
         finally:
             pass
-
         pass
 
     def train(self, start_epoch):
@@ -293,15 +292,15 @@ if __name__ == '__main__':
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
-    _batch_size = 32
+    _batch_size = 1024
     _has_l1 = True
     _linear_bias = False
     _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_128_1level_1600_no_32_1_l1_sum_0_1/ckpt.t7"
-    _name = "1_no_update_class_1level_{}_{}_no_{}_{}_l1_sum_{}_{}".format(
-        _low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1, 1 if _is_adjust_lambda else 0, _ratio)
-    _checkpoint_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    _name = "1level_{}_{}_no_{}_{}_l1_sum_{}_{}".format(_low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1,
+                                                        1 if _is_adjust_lambda else 0, _ratio)
+    _checkpoint_path = "./checkpoint/1_no_update/{}/ckpt.t7".format(_name)
 
     Tools.print()
     Tools.print("name={}".format(_name))
