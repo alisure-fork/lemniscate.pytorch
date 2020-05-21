@@ -79,6 +79,43 @@ class AverageMeter(object):
     pass
 
 
+class ImageNetInstance(datasets.ImageFolder):
+
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        sample = self.loader(path)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return sample, target, index
+
+    @staticmethod
+    def data(train_root, test_root, batch_size=128, output_size=224, is_train_shuffle=True):
+        Tools.print('==> Preparing data..')
+
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+        transform_train = transforms.Compose([
+            transforms.RandomResizedCrop(size=output_size, scale=(0.2, 1.)),
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4), transforms.RandomGrayscale(p=0.2),
+            transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
+
+        transform_test = transforms.Compose([
+            transforms.Resize(256), transforms.CenterCrop(output_size), transforms.ToTensor(), normalize])
+
+        train_set = ImageNetInstance(root=train_root, transform=transform_train)
+        test_set = ImageNetInstance(root=test_root, transform=transform_test)
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=8)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=8)
+
+        class_name = None
+
+        return train_set, train_loader, test_set, test_loader, class_name
+
+    pass
+
+
 class CIFAR10Instance(datasets.CIFAR10):
 
     def __getitem__(self, index):
