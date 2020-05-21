@@ -303,6 +303,14 @@ class ProduceClass(object):
         self.classes = np.zeros(shape=(self.n_sample, ), dtype=np.int)
         pass
 
+    def init(self):
+        class_per_num = self.n_sample // self.low_dim
+        for i in range(self.low_dim):
+            self.class_num[i] = class_per_num
+            self.classes[i * class_per_num: (i + 1) * class_per_num] = i
+            pass
+        pass
+
     def reset(self):
         self.count = 0
         self.count_2 = 0
