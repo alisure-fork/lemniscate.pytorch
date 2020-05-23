@@ -4,17 +4,17 @@ import torch
 from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 from alisuretool.Tools import Tools
-from torchvision.models.resnet import ResNet, Bottleneck
-from cifar_10_tool import HCBasicBlock, AverageMeter, HCLoss, KNN
+from cifar_10_tool import AverageMeter, HCLoss, KNN
+from torchvision.models.resnet import ResNet, Bottleneck, BasicBlock
 from cifar_10_tool import ProduceClass, FeatureName, Normalize, ImageNetInstance
 
 
 class MyResNet(ResNet):
 
-    def __init__(self, ):
-        super().__init__(Bottleneck, [3, 4, 6, 3])
+    def __init__(self, block=Bottleneck, layers=[3, 4, 6, 3]):
+        super().__init__(block, layers)
+        self.out_dim = 512 * block.expansion
         pass
 
     def forward(self, x):
@@ -39,10 +39,11 @@ class HCResNet(nn.Module):
         super().__init__()
         self.is_vis = is_vis
 
-        self.backbone = MyResNet()
+        # self.backbone = MyResNet(block=Bottleneck, layers=[3, 4, 6, 3])
+        self.backbone = MyResNet(block=BasicBlock, layers=[2, 2, 2, 2])
 
         self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.linear_1 = nn.Linear(2048, low_dim, bias=linear_bias)
+        self.linear_1 = nn.Linear(self.backbone.out_dim, low_dim, bias=linear_bias)
         self.linear_2 = nn.Linear(low_dim, low_dim2, bias=linear_bias)
         self.linear_3 = nn.Linear(low_dim2, low_dim3, bias=linear_bias)
         self.linear_4 = nn.Linear(low_dim3, low_dim4, bias=linear_bias)
@@ -102,7 +103,7 @@ class HCRunner(object):
                  batch_size=128, is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.01,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
                  checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data',
-                 train_split="train", test_split="val", sample_num=200):
+                 train_split="train", test_split="val", sample_num=200, temp_size=16):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
         self.resume = resume
@@ -110,12 +111,12 @@ class HCRunner(object):
         self.data_root = data_root
         self.batch_size = batch_size
         self.sample_num = sample_num
+        self.temp_size = temp_size
 
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
         self.low_dim3 = low_dim3
         self.low_dim4 = low_dim4
-        self.low_dim_list = [2048, self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4]
         self.ratio1 = ratio1
         self.ratio2 = ratio2
         self.ratio3 = ratio3
@@ -141,6 +142,7 @@ class HCRunner(object):
         self.train_num = self.train_set.__len__()
 
         self.net = HCResNet(self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4, linear_bias=linear_bias).cuda()
+        self.low_dim_list = [self.net.backbone.out_dim, self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4]
         self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
 
         self._load_model(self.net)
@@ -258,9 +260,9 @@ class HCRunner(object):
             pass
         pass
 
-    def test(self, epoch=0, t=0.1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, [self.low_dim_list[0]],self.train_loader_for_test, self.test_loader,
-                       100, t, loader_n=loader_n, temp_size=16)
+    def test(self, epoch=0, t=0.1, loader_n=1, k=100):
+        _acc = KNN.knn(epoch, self.net, [self.low_dim_list[0]], self.train_loader_for_test,
+                       self.test_loader, k, t, loader_n=loader_n, temp_size=self.temp_size)
         return _acc
 
     def _train_one_epoch(self, epoch, test_freq=5):
@@ -392,18 +394,20 @@ if __name__ == '__main__':
     _ratio1, _ratio2, _ratio3, _ratio4 = 4, 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
-    _test_sample_num = 200  # K
+    _test_sample_num = 200
 
     # _data_root_path = '/mnt/4T/Data/ILSVRC17/ILSVRC2015_CLS-LOC/ILSVRC2015/Data/CLS-LOC'
-    _data_root_path = '/media/ubuntu/ALISURE/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
+    # _data_root_path = '/media/ubuntu/ALISURE/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
+    _data_root_path = '/media/test/ALISURE/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
     _test_split = "val_new"
-    _batch_size = 16 * 4
+    _batch_size = 128
+    _test_temp_size = 128
     _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
     _resume = False
     _pre_train = None
-    _name = "res50_class_4level_{}_{}_{}_{}_no_{}_{}_{}_l1_sum_{}_{}{}{}{}".format(
+    _name = "res18_class_4level_{}_{}_{}_{}_no_{}_{}_{}_l1_sum_{}_{}{}{}{}".format(
         _low_dim, _low_dim2, _low_dim3, _low_dim4, _max_epoch, _batch_size, 0 if _linear_bias else 1,
         1 if _is_adjust_lambda else 0, _ratio1, _ratio2, _ratio3, _ratio4)
     _checkpoint_path = "./checkpoint/imagenet/{}/ckpt.t7".format(_name)
@@ -422,10 +426,11 @@ if __name__ == '__main__':
                       l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda, is_loss_sum=_is_loss_sum,
                       batch_size=_batch_size, learning_rate=_learning_rate, max_epoch=_max_epoch, t_epoch=_t_epoch,
                       first_epoch=_first_epoch, resume=_resume, pre_train=_pre_train, sample_num=_test_sample_num,
-                      checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split)
+                      checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split,
+                      temp_size=_test_temp_size)
     Tools.print()
-    # acc = runner.test()
-    # Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
+    acc = runner.test()
+    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
     runner.train(start_epoch=_start_epoch)
     Tools.print()
     acc = runner.test(loader_n=2)
