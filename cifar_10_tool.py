@@ -318,10 +318,11 @@ class ProduceClass(object):
 
     def init(self):
         class_per_num = self.n_sample // self.low_dim
+        self.class_num += class_per_num
         for i in range(self.low_dim):
-            self.class_num[i] = class_per_num
             self.classes[i * class_per_num: (i + 1) * class_per_num] = i
             pass
+        np.random.shuffle(self.classes)
         pass
 
     def reset(self):
@@ -359,7 +360,7 @@ class ProduceClass(object):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t, loader_n=1):
+    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t, loader_n=1, temp_size=100):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory_list = [torch.rand(n_sample, low_dim).t().cuda() for low_dim in low_dim_list]
@@ -372,8 +373,8 @@ class KNN(object):
 
         transform_bak = train_loader.dataset.transform
         train_loader.dataset.transform = test_loader.dataset.transform
-        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
-        for batch_idx, (inputs, _, indexes) in tqdm(enumerate(temp_loader)):
+        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, temp_size, shuffle=False, num_workers=1)
+        for batch_idx, (inputs, _, indexes) in tqdm(enumerate(temp_loader), total=len(temp_loader)):
             feature_dict = net(inputs)
             batch_size = inputs.size(0)
             for _index in range(len(low_dim_list)):
@@ -415,7 +416,7 @@ class KNN(object):
                 top1_list, top5_list = [0. for _ in low_dim_list], [0. for _ in low_dim_list]
                 retrieval_one_hot_list = [torch.zeros(k, max_c).cuda() for _ in low_dim_list]  # [200, 10]
 
-                for batch_idx, (inputs, targets, indexes) in tqdm(enumerate(loader)):
+                for batch_idx, (inputs, targets, indexes) in tqdm(enumerate(loader), total=len(loader)):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 

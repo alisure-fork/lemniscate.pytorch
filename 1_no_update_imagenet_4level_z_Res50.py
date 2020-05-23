@@ -21,13 +21,14 @@ class MyResNet(ResNet):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.maxpool(x)
+        convB1 = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x
+        convB2 = self.layer1(convB1)
+        convB3 = self.layer2(convB2)
+        convB4 = self.layer3(convB3)
+        convB5 = self.layer4(convB4)
+
+        return convB1, convB2, convB3, convB4, convB5
 
     pass
 
@@ -98,7 +99,7 @@ class HCResNet(nn.Module):
 class HCRunner(object):
 
     def __init__(self, low_dim=512, low_dim2=128, low_dim3=10, low_dim4=10,  ratio1=4, ratio2=3, ratio3=2, ratio4=1,
-                 batch_size=128, is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
+                 batch_size=128, is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.01,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
                  checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data',
                  train_split="train", test_split="val", sample_num=200):
@@ -258,8 +259,8 @@ class HCRunner(object):
         pass
 
     def test(self, epoch=0, t=0.1, loader_n=1):
-        _acc = KNN.knn(epoch, self.net, self.low_dim_list,
-                       self.train_loader_for_test, self.test_loader, self.sample_num, t, loader_n=loader_n)
+        _acc = KNN.knn(epoch, self.net, [self.low_dim_list[0]],self.train_loader_for_test, self.test_loader,
+                       100, t, loader_n=loader_n, temp_size=16)
         return _acc
 
     def _train_one_epoch(self, epoch, test_freq=5):
@@ -279,7 +280,7 @@ class HCRunner(object):
             self.produce_class21.reset()
             self.produce_class31.reset()
             self.produce_class41.reset()
-            for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader)):
+            for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
@@ -385,17 +386,18 @@ if __name__ == '__main__':
 
     _start_epoch = 0
     _max_epoch = 160
-    _learning_rate = 0.01
+    _learning_rate = 0.001
     _first_epoch, _t_epoch = 20, 10
     _low_dim, _low_dim2, _low_dim3, _low_dim4 = 1024 * 8, 1024 * 4, 1024 * 2, 1024 * 1
     _ratio1, _ratio2, _ratio3, _ratio4 = 4, 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
-    _test_sample_num = 100  # K
+    _test_sample_num = 200  # K
 
-    _data_root_path = '/mnt/4T/Data/ILSVRC17/ILSVRC2015_CLS-LOC/ILSVRC2015/Data/CLS-LOC'
-    _test_split = "val"
-    _batch_size = 16
+    # _data_root_path = '/mnt/4T/Data/ILSVRC17/ILSVRC2015_CLS-LOC/ILSVRC2015/Data/CLS-LOC'
+    _data_root_path = '/media/ubuntu/ALISURE/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
+    _test_split = "val_new"
+    _batch_size = 16 * 4
     _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
@@ -422,8 +424,8 @@ if __name__ == '__main__':
                       first_epoch=_first_epoch, resume=_resume, pre_train=_pre_train, sample_num=_test_sample_num,
                       checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split)
     Tools.print()
-    acc = runner.test()
-    Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
+    # acc = runner.test()
+    # Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
     runner.train(start_epoch=_start_epoch)
     Tools.print()
     acc = runner.test(loader_n=2)
