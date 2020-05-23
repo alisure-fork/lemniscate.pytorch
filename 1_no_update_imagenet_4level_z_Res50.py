@@ -1,6 +1,7 @@
 import os
 import math
 import torch
+from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -100,13 +101,14 @@ class HCRunner(object):
                  batch_size=128, is_loss_sum=False, is_adjust_lambda=False, l1_lambda=0.1, learning_rate=0.03,
                  linear_bias=True, has_l1=False, max_epoch=1000, t_epoch=300, first_epoch=200, resume=False,
                  checkpoint_path="./ckpt.t7", pre_train=None, data_root='./data',
-                 train_split="train", test_split="val"):
+                 train_split="train", test_split="val", sample_num=200):
         self.learning_rate = learning_rate
         self.checkpoint_path = Tools.new_dir(checkpoint_path)
         self.resume = resume
         self.pre_train = pre_train
         self.data_root = data_root
         self.batch_size = batch_size
+        self.sample_num = sample_num
 
         self.low_dim = low_dim
         self.low_dim2 = low_dim2
@@ -131,8 +133,10 @@ class HCRunner(object):
 
         _test_dir = os.path.join(self.data_root, test_split)
         _train_dir = os.path.join(self.data_root, train_split)
-        self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = ImageNetInstance.data(
-            train_root=_train_dir, test_root=_test_dir, batch_size=self.batch_size, output_size=224)
+        (self.train_set, self.train_loader, self.test_set, self.test_loader, self.train_set_for_test,
+         self.train_loader_for_test) = ImageNetInstance.data(train_root=_train_dir, test_root=_test_dir,
+                                                             batch_size=self.batch_size,
+                                                             output_size=224, sample_num=self.sample_num)
         self.train_num = self.train_set.__len__()
 
         self.net = HCResNet(self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4, linear_bias=linear_bias).cuda()
@@ -140,10 +144,23 @@ class HCRunner(object):
 
         self._load_model(self.net)
 
-        self.produce_class = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
-        self.produce_class2 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
-        self.produce_class3 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=self.ratio3)
-        self.produce_class4 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim4, ratio=self.ratio4)
+        self.produce_class11 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
+        self.produce_class21 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
+        self.produce_class31 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=self.ratio3)
+        self.produce_class41 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim4, ratio=self.ratio4)
+        self.produce_class12 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
+        self.produce_class22 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
+        self.produce_class32 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim3, ratio=self.ratio3)
+        self.produce_class42 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim4, ratio=self.ratio4)
+        self.produce_class11.init()
+        self.produce_class21.init()
+        self.produce_class31.init()
+        self.produce_class41.init()
+        self.produce_class12.init()
+        self.produce_class22.init()
+        self.produce_class32.init()
+        self.produce_class42.init()
+
         self.criterion = HCLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
@@ -242,59 +259,41 @@ class HCRunner(object):
 
     def test(self, epoch=0, t=0.1, loader_n=1):
         _acc = KNN.knn(epoch, self.net, self.low_dim_list,
-                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
+                       self.train_loader_for_test, self.test_loader, self.sample_num, t, loader_n=loader_n)
         return _acc
 
-    def _train_one_epoch(self, epoch, update_epoch=3):
-
-        # Update
-        try:
-            if epoch % update_epoch == 0:
-                self.net.eval()
-                Tools.print("Update label {} .......".format(epoch))
-                self.produce_class.reset()
-                self.produce_class2.reset()
-                self.produce_class3.reset()
-                self.produce_class4.reset()
-                for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
-                    inputs, indexes = inputs.cuda(), indexes.cuda()
-                    feature_dict = self.net(inputs)
-                    self.produce_class.cal_label(feature_dict[FeatureName.L2norm1], indexes)
-                    self.produce_class2.cal_label(feature_dict[FeatureName.L2norm2], indexes)
-                    self.produce_class3.cal_label(feature_dict[FeatureName.L2norm3], indexes)
-                    self.produce_class4.cal_label(feature_dict[FeatureName.L2norm4], indexes)
-                    pass
-                Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{} 4-{}/{}".format(
-                    epoch, self.produce_class.count, self.produce_class.count_2,
-                    self.produce_class2.count, self.produce_class2.count_2,
-                    self.produce_class3.count, self.produce_class3.count_2,
-                    self.produce_class4.count, self.produce_class4.count_2))
-                pass
-        finally:
-            pass
-
+    def _train_one_epoch(self, epoch, test_freq=5):
         # Train
         try:
             self.net.train()
             _learning_rate_ = self._adjust_learning_rate(epoch)
             _l1_lambda_ = self._adjust_l1_lambda(epoch)
-            Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
+            Tools.print('Epoch: [{}] lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
 
             avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_2, avg_loss_2_1, avg_loss_2_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_3, avg_loss_3_1, avg_loss_3_2 = AverageMeter(), AverageMeter(), AverageMeter()
             avg_loss_4, avg_loss_4_1, avg_loss_4_2 = AverageMeter(), AverageMeter(), AverageMeter()
 
-            for batch_idx, (inputs, _, indexes) in enumerate(self.train_loader):
+            self.produce_class11.reset()
+            self.produce_class21.reset()
+            self.produce_class31.reset()
+            self.produce_class41.reset()
+            for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader)):
                 inputs, indexes = inputs.cuda(), indexes.cuda()
                 self.optimizer.zero_grad()
 
                 feature_dict = self.net(inputs)
 
-                targets = self.produce_class.get_label(indexes)
-                targets2 = self.produce_class2.get_label(indexes)
-                targets3 = self.produce_class3.get_label(indexes)
-                targets4 = self.produce_class4.get_label(indexes)
+                self.produce_class11.cal_label(feature_dict[FeatureName.L2norm1], indexes)
+                self.produce_class21.cal_label(feature_dict[FeatureName.L2norm2], indexes)
+                self.produce_class31.cal_label(feature_dict[FeatureName.L2norm3], indexes)
+                self.produce_class41.cal_label(feature_dict[FeatureName.L2norm4], indexes)
+
+                targets = self.produce_class12.get_label(indexes)
+                targets2 = self.produce_class22.get_label(indexes)
+                targets3 = self.produce_class32.get_label(indexes)
+                targets4 = self.produce_class42.get_label(indexes)
 
                 params = [_ for _ in self.net.module.parameters()]
                 loss_1, loss_1_1, loss_1_2 = self.criterion(
@@ -325,8 +324,25 @@ class HCRunner(object):
                 self.optimizer.step()
                 pass
 
+            classes = self.produce_class12.classes
+            self.produce_class12.classes = self.produce_class11.classes
+            self.produce_class11.classes = classes
+            classes = self.produce_class22.classes
+            self.produce_class22.classes = self.produce_class21.classes
+            self.produce_class21.classes = classes
+            classes = self.produce_class32.classes
+            self.produce_class32.classes = self.produce_class31.classes
+            self.produce_class31.classes = classes
+            classes = self.produce_class42.classes
+            self.produce_class42.classes = self.produce_class41.classes
+            self.produce_class41.classes = classes
+            Tools.print("Train: [{}] 1-{}/{}".format(epoch, self.produce_class11.count, self.produce_class11.count_2))
+            Tools.print("Train: [{}] 2-{}/{}".format(epoch, self.produce_class21.count, self.produce_class21.count_2))
+            Tools.print("Train: [{}] 3-{}/{}".format(epoch, self.produce_class31.count, self.produce_class31.count_2))
+            Tools.print("Train: [{}] 4-{}/{}".format(epoch, self.produce_class41.count, self.produce_class41.count_2))
+
             Tools.print(
-                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f}) Loss 2: {:.4f}({:.4f}/{:.4f}) '
+                'Train: [{}] {} Loss 1: {:.4f}({:.4f}/{:.4f}) Loss 2: {:.4f}({:.4f}/{:.4f}) '
                 'Loss 3: {:.4f}({:.4f}/{:.4f}) Loss 4: {:.4f}({:.4f}/{:.4f})'.format(
                     epoch, len(self.train_loader),
                     avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg,
@@ -337,8 +353,8 @@ class HCRunner(object):
             pass
 
         # Test
-        try:
-            Tools.print("Test [{}] .......".format(epoch))
+        if epoch % test_freq == 0:
+            Tools.print("Test:  [{}] .......".format(epoch))
             _acc = self.test(epoch=epoch)
             if _acc > self.best_acc:
                 Tools.print('Saving..')
@@ -347,15 +363,14 @@ class HCRunner(object):
                 self.best_acc = _acc
                 pass
             Tools.print('Epoch: [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc * 100))
-        finally:
             pass
 
         pass
 
-    def train(self, start_epoch, update_epoch=3):
+    def train(self, start_epoch):
         for epoch in range(start_epoch, self.max_epoch):
             Tools.print()
-            self._train_one_epoch(epoch, update_epoch=update_epoch)
+            self._train_one_epoch(epoch)
             pass
         pass
 
@@ -376,9 +391,11 @@ if __name__ == '__main__':
     _ratio1, _ratio2, _ratio3, _ratio4 = 4, 3, 2, 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
+    _test_sample_num = 100  # K
 
     _data_root_path = '/mnt/4T/Data/ILSVRC17/ILSVRC2015_CLS-LOC/ILSVRC2015/Data/CLS-LOC'
-    _batch_size = 32
+    _test_split = "val"
+    _batch_size = 16
     _is_loss_sum = True
     _has_l1 = True
     _linear_bias = False
@@ -398,17 +415,17 @@ if __name__ == '__main__':
     Tools.print("pre_train={} checkpoint_path={}".format(_pre_train, _checkpoint_path))
     Tools.print()
 
-    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3, low_dim4=_low_dim4,
-                      ratio1=_ratio1, ratio2=_ratio2, ratio3=_ratio3, ratio4=_ratio4, linear_bias=_linear_bias,
-                      has_l1=_has_l1, l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda,
-                      is_loss_sum=_is_loss_sum, batch_size=_batch_size, learning_rate=_learning_rate,
-                      max_epoch=_max_epoch, t_epoch=_t_epoch, first_epoch=_first_epoch, resume=_resume,
-                      pre_train=_pre_train, checkpoint_path=_checkpoint_path, data_root=_data_root_path)
+    runner = HCRunner(low_dim=_low_dim, low_dim2=_low_dim2, low_dim3=_low_dim3, low_dim4=_low_dim4, ratio1=_ratio1,
+                      ratio2=_ratio2, ratio3=_ratio3, ratio4=_ratio4, linear_bias=_linear_bias, has_l1=_has_l1,
+                      l1_lambda=_l1_lambda, is_adjust_lambda=_is_adjust_lambda, is_loss_sum=_is_loss_sum,
+                      batch_size=_batch_size, learning_rate=_learning_rate, max_epoch=_max_epoch, t_epoch=_t_epoch,
+                      first_epoch=_first_epoch, resume=_resume, pre_train=_pre_train, sample_num=_test_sample_num,
+                      checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split)
     Tools.print()
     acc = runner.test()
     Tools.print('Random accuracy: {:.2f}'.format(acc * 100))
-    runner.train(start_epoch=_start_epoch, update_epoch=3)
+    runner.train(start_epoch=_start_epoch)
     Tools.print()
     acc = runner.test(loader_n=2)
-    Tools.print('final accuracy: {:.2f}'.format(acc * 100))
+    Tools.print('Final accuracy: {:.2f}'.format(acc * 100))
     pass

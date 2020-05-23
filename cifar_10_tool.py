@@ -1,7 +1,9 @@
 import torch
 import numpy as np
+from tqdm import tqdm
 import torch.nn as nn
 from PIL import Image
+from collections import Counter
 import torch.utils.data as data
 import torch.nn.functional as F
 from alisuretool.Tools import Tools
@@ -91,7 +93,7 @@ class ImageNetInstance(datasets.ImageFolder):
         return sample, target, index
 
     @staticmethod
-    def data(train_root, test_root, batch_size=128, output_size=224, is_train_shuffle=True):
+    def data(train_root, test_root, batch_size=128, output_size=224, sample_num=100, is_train_shuffle=True):
         Tools.print('==> Preparing data..')
 
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -109,9 +111,20 @@ class ImageNetInstance(datasets.ImageFolder):
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=8)
         test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=8)
 
-        class_name = None
+        train_set_for_test = ImageNetInstance(root=train_root, transform=transform_test)
+        counter = Counter(train_set_for_test.targets)
+        cumsum = [0] + list(np.cumsum(list(counter.values())))
+        choice_list = []
+        for i in range(len(cumsum) - 1):
+            choice_list.extend(list(np.random.choice(range(cumsum[i], cumsum[i + 1]), sample_num, replace=False)))
+            pass
+        train_set_for_test.imgs = np.asarray(train_set_for_test.imgs)[choice_list].tolist()
+        train_set_for_test.samples = train_set_for_test.imgs
+        train_set_for_test.targets = np.asarray(train_set_for_test.targets)[choice_list].tolist()
+        train_loader_for_test = torch.utils.data.DataLoader(train_set_for_test, batch_size=batch_size,
+                                                            shuffle=False, num_workers=8)
 
-        return train_set, train_loader, test_set, test_loader, class_name
+        return train_set, train_loader, test_set, test_loader, train_set_for_test, train_loader_for_test
 
     pass
 
@@ -360,7 +373,7 @@ class KNN(object):
         transform_bak = train_loader.dataset.transform
         train_loader.dataset.transform = test_loader.dataset.transform
         temp_loader = torch.utils.data.DataLoader(train_loader.dataset, 100, shuffle=False, num_workers=1)
-        for batch_idx, (inputs, _, indexes) in enumerate(temp_loader):
+        for batch_idx, (inputs, _, indexes) in tqdm(enumerate(temp_loader)):
             feature_dict = net(inputs)
             batch_size = inputs.size(0)
             for _index in range(len(low_dim_list)):
@@ -402,7 +415,7 @@ class KNN(object):
                 top1_list, top5_list = [0. for _ in low_dim_list], [0. for _ in low_dim_list]
                 retrieval_one_hot_list = [torch.zeros(k, max_c).cuda() for _ in low_dim_list]  # [200, 10]
 
-                for batch_idx, (inputs, targets, indexes) in enumerate(loader):
+                for batch_idx, (inputs, targets, indexes) in tqdm(enumerate(loader)):
                     targets = targets.cuda(async=True)
                     total += targets.size(0)
 

@@ -245,6 +245,7 @@ class HCRunner(object):
             self.produce_class2.classes = self.produce_class1.classes
             self.produce_class1.classes = classes
             Tools.print("Train: [{}] 1-{}/{}".format(epoch, self.produce_class1.count, self.produce_class1.count_2))
+
             Tools.print('Train: [{}] {} Loss 1: {:.4f}({:.4f}/{:.4f})'.format(
                 epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg))
         finally:
@@ -279,8 +280,14 @@ if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     """
-    # 11_class_128_1level_1600_no_32_1_l1_sum_0_1
-    85.34(128, 13196/2543)
+    2020-05-22 09:34:51 Epoch: [952] lr=0.0005910698778918257 lambda=0.0
+    2020-05-22 09:35:22 Train: [952] 1-18205/2888
+    2020-05-22 09:35:22 Train: [952] 49 Loss 1: 1.3007(1.3007/17.0986)
+    2020-05-22 09:35:22 Test:  [952] .......
+    2020-05-22 09:35:35 Test:  [952] 0 Top1=77.16 Top5=98.75
+    2020-05-22 09:35:35 Test:  [952] 1 Top1=75.28 Top5=98.52
+    2020-05-22 09:35:35 Saving..
+    2020-05-22 09:35:36 Test:  [952] best accuracy: 75.28
     """
 
     _start_epoch = 0
@@ -292,7 +299,7 @@ if __name__ == '__main__':
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
-    _batch_size = 1024
+    _batch_size = 32
     _has_l1 = True
     _linear_bias = False
     _resume = False
