@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optimizer
 from alisuretool.Tools import Tools
-from cifar_10_tool import HCBasicBlock, AverageMeter, CIFAR10Instance, FeatureName
+from cifar_10_tool import AverageMeter, CIFAR10Instance, FeatureName
 
 
 class MultipleNonLinearClassifier(nn.Module):
@@ -40,7 +40,7 @@ class Classifier(nn.Module):
         self.feature_name = feature_name
         self.is_fine_tune = is_fine_tune
 
-        self.attention = HCResNet(HCBasicBlock, [2, 2, 2, 2], *low_dim, linear_bias=linear_bias, is_vis=True).cuda()
+        self.attention = HCAlexNet(*low_dim, linear_bias=linear_bias).cuda()
 
         if not self.is_fine_tune:
             # 3, 15, 30, 45, 60
@@ -225,74 +225,34 @@ class ClassierRunner(object):
 
 if __name__ == '__main__':
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-    # 1
-    # _low_dim = [128]
-    # _name = "11_class_128_1level_1600_no_32_1_l1_sum_0_1"
-    # from cifar_10_1level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]]]
-    # 2
-    # _low_dim = [1024, 128]
-    # _name = "11_class_1024_2level_128_1600_no_32_1_l1_sum_0"
-    # from cifar_10_2level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    # #                  [FeatureName.Logits2, _low_dim[1]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-    #                  [FeatureName.L2norm2, _low_dim[1]]]
-    # 3
-    # _low_dim = [1024, 256, 64]
-    # _name = "11_class_1024_3level_256_64_1600_no_32_1_l1_sum_0_321"
-    # from cifar_10_3level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]]]
-    # 4
-    # _low_dim = [1024, 512, 256, 128]
-    # _name = "11_class_1024_4level_512_256_128_no_1600_32_1_l1_sum_0_4321"
-    # from cifar_10_4level_z import HCResNet
-    # # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    # #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    # #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
-    # #                  [FeatureName.Logits4, _low_dim[3]]]
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
-    #                  [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
-    #                  [FeatureName.L2norm4, _low_dim[3]]]
-    # 5
+    """
+    1. 不加载预训练 0.3664 47.17
+    2. 预训练 which=3 0.7238 75.29
+    3. 预训练 which=0 0.7627 77.40
+    4. 预训练 which=0 微调 0.784 80.96
+    """
     _low_dim = [1024, 512, 256, 128, 64]
-    _name = "11_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
-    from cifar_10_5level_z import HCResNet
-    # _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-    #                  [FeatureName.Logits0, 512], [FeatureName.Logits1, _low_dim[0]],
-    #                  [FeatureName.Logits2, _low_dim[1]], [FeatureName.Logits3, _low_dim[2]],
-    #                  [FeatureName.Logits4, _low_dim[3]], [FeatureName.Logits5, _low_dim[4]]]
-    _feature_list = [[FeatureName.ConvB3, 512], [FeatureName.ConvB4, 512],
-                     [FeatureName.L2norm0, 512], [FeatureName.L2norm1, _low_dim[0]],
+    _name = "./cifar10/alexnet_class_1024_5level_512_256_128_64_no_1600_32_1_l1_sum_0_54321"
+    from a_cifar_10_5level_z_AlexNet import HCAlexNet
+    _feature_list = [[FeatureName.L2norm0, 256], [FeatureName.L2norm1, _low_dim[0]],
                      [FeatureName.L2norm2, _low_dim[1]], [FeatureName.L2norm3, _low_dim[2]],
                      [FeatureName.L2norm4, _low_dim[3]], [FeatureName.L2norm5, _low_dim[4]]]
 
-    _which = 3
+    _which = 0
     _feature_name = _feature_list[_which][0]
     _input_size = _feature_list[_which][1]
 
-    _is_fine_tune = False
+    _is_fine_tune = True
 
     _start_epoch = 0  # train epoch
     _max_epoch = 200
     _linear_bias = False
 
-    _pre_train_path = None
-    # _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
-    _checkpoint_path_classier = "./checkpoint/cifar10/{}/classier_{}_{}_{}_{}.t7".format(
+    # _pre_train_path = None
+    _pre_train_path = "./checkpoint/{}/ckpt.t7".format(_name)
+    _checkpoint_path_classier = "./checkpoint/{}/classier_{}_{}_{}_{}.t7".format(
         _name, _input_size, _feature_name, 1 if _is_fine_tune else 0, 1 if _pre_train_path else 0)
 
     Tools.print()
@@ -302,7 +262,8 @@ if __name__ == '__main__':
     _net = Classifier(input_size_or_list=[_input_size, 512, 256], low_dim=_low_dim,
                       feature_name=_feature_name, is_fine_tune=_is_fine_tune, linear_bias=_linear_bias)
     runner = ClassierRunner(net=_net, max_epoch=_max_epoch, resume=False, is_fine_tune=_is_fine_tune,
-                            pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier)
+                            pre_train_path=_pre_train_path, checkpoint_path=_checkpoint_path_classier,
+                            data_root="/media/test/ALISURE/data/cifar10")
     Tools.print()
     train_acc = runner.test(0, is_test_test=False)
     test_acc = runner.test(0, is_test_test=True)

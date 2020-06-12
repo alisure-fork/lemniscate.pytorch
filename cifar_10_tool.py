@@ -93,24 +93,30 @@ class ImageNetInstance(datasets.ImageFolder):
         return sample, target, index
 
     @staticmethod
-    def data(train_root, test_root, batch_size=128, output_size=224, sample_num=100, is_train_shuffle=True):
+    def data(train_root, test_root, batch_size=128, output_size=224, sample_num=100, is_train_shuffle=True, worker=16):
         Tools.print('==> Preparing data..')
 
+        # 0
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-
         transform_train = transforms.Compose([
             transforms.RandomResizedCrop(size=output_size, scale=(0.2, 1.)),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4), transforms.RandomGrayscale(p=0.2),
             transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
-
         transform_test = transforms.Compose([
             transforms.Resize(256), transforms.CenterCrop(output_size), transforms.ToTensor(), normalize])
 
+        # 1
         train_set = ImageNetInstance(root=train_root, transform=transform_train)
         test_set = ImageNetInstance(root=test_root, transform=transform_test)
-        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=8)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=8)
 
+        # train_set.imgs = train_set.imgs[0: 1000]
+        # train_set.samples = train_set.imgs
+        # train_set.targets = train_set.targets[0: 1000]
+        # test_set.imgs = test_set.imgs[0: 1000]
+        # test_set.samples = test_set.imgs
+        # test_set.targets = test_set.targets[0: 1000]
+
+        # 2
         train_set_for_test = ImageNetInstance(root=train_root, transform=transform_test)
         counter = Counter(train_set_for_test.targets)
         cumsum = [0] + list(np.cumsum(list(counter.values())))
@@ -121,6 +127,10 @@ class ImageNetInstance(datasets.ImageFolder):
         train_set_for_test.imgs = np.asarray(train_set_for_test.imgs)[choice_list].tolist()
         train_set_for_test.samples = train_set_for_test.imgs
         train_set_for_test.targets = np.asarray(train_set_for_test.targets)[choice_list].tolist()
+
+        # 3
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=worker)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=8)
         train_loader_for_test = torch.utils.data.DataLoader(train_set_for_test, batch_size=batch_size,
                                                             shuffle=False, num_workers=8)
 
@@ -360,7 +370,7 @@ class ProduceClass(object):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t, loader_n=1, temp_size=100):
+    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t, loader_n=1, temp_size=100, return_all_acc=False):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory_list = [torch.rand(n_sample, low_dim).t().cuda() for low_dim in low_dim_list]
@@ -408,6 +418,7 @@ class KNN(object):
             return top1, top5, retrieval_one_hot
 
         all_acc = []
+        all_top1_list, all_top5_list = [], []
         with torch.no_grad():
             now_loader = [test_loader] if loader_n == 1 else [test_loader, train_loader]
 
@@ -428,16 +439,19 @@ class KNN(object):
                         pass
                     pass
 
+                top1_list = [one * 100. / total for one in top1_list]
+                top5_list = [one * 100. / total for one in top5_list]
                 for i in range(len(low_dim_list)):
-                    Tools.print("Test:  [{}] {} Top1={:.2f} Top5={:.2f}".format(
-                        epoch, i, top1_list[i] * 100. / total, top5_list[i] * 100. / total))
+                    Tools.print("Test:  [{}] {} Top1={:.2f} Top5={:.2f}".format(epoch, i, top1_list[i], top5_list[i]))
                     pass
 
-                all_acc.append(top1_list[-1] / total)
+                all_acc.append(top1_list[-1])
+                all_top1_list.append(top1_list)
+                all_top5_list.append(top5_list)
                 pass
             pass
 
-        return all_acc[0]
+        return (all_top1_list, all_top5_list) if return_all_acc else all_acc[0]
 
     pass
 
