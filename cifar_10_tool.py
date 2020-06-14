@@ -130,9 +130,9 @@ class ImageNetInstance(datasets.ImageFolder):
 
         # 3
         train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=worker)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=8)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=worker)
         train_loader_for_test = torch.utils.data.DataLoader(train_set_for_test, batch_size=batch_size,
-                                                            shuffle=False, num_workers=8)
+                                                            shuffle=False, num_workers=worker)
 
         return train_set, train_loader, test_set, test_loader, train_set_for_test, train_loader_for_test
 
@@ -370,7 +370,8 @@ class ProduceClass(object):
 class KNN(object):
 
     @staticmethod
-    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t, loader_n=1, temp_size=100, return_all_acc=False):
+    def knn(epoch, net, low_dim_list, train_loader, test_loader, k, t,
+            loader_n=1, temp_size=100, return_all_acc=False, temp_num_workers=8):
         net.eval()
         n_sample = train_loader.dataset.__len__()
         out_memory_list = [torch.rand(n_sample, low_dim).t().cuda() for low_dim in low_dim_list]
@@ -383,7 +384,8 @@ class KNN(object):
 
         transform_bak = train_loader.dataset.transform
         train_loader.dataset.transform = test_loader.dataset.transform
-        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, temp_size, shuffle=False, num_workers=1)
+        temp_loader = torch.utils.data.DataLoader(train_loader.dataset, temp_size,
+                                                  shuffle=False, num_workers=temp_num_workers)
         for batch_idx, (inputs, _, indexes) in tqdm(enumerate(temp_loader), total=len(temp_loader)):
             feature_dict = net(inputs)
             batch_size = inputs.size(0)

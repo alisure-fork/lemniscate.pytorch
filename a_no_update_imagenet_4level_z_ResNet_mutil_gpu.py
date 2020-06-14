@@ -5,6 +5,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import torch.optim as optim
 from alisuretool.Tools import Tools
+import torch.backends.cudnn as cudnn
 from cifar_10_tool import AverageMeter, HCLoss, KNN
 from torchvision.models.resnet import ResNet, Bottleneck, BasicBlock
 from cifar_10_tool import ProduceClass, FeatureName, Normalize, ImageNetInstance
@@ -130,6 +131,7 @@ class HCRunner(object):
         self.l1_lambda = l1_lambda
         self.is_adjust_lambda = is_adjust_lambda
         self.is_loss_sum = is_loss_sum
+        self.worker = worker
 
         self.best_acc = 0
 
@@ -137,14 +139,20 @@ class HCRunner(object):
         _train_dir = os.path.join(self.data_root, train_split)
         (self.train_set, self.train_loader, self.test_set, self.test_loader, self.train_set_for_test,
          self.train_loader_for_test) = ImageNetInstance.data(train_root=_train_dir, test_root=_test_dir,
-                                                             batch_size=self.batch_size, worker=worker,
+                                                             batch_size=self.batch_size, worker=self.worker,
                                                              output_size=224, sample_num=self.sample_num)
         self.train_num = self.train_set.__len__()
 
-        self.net = HCResNet(self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4, linear_bias=linear_bias).cuda()
+        self.net = HCResNet(self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4, linear_bias=linear_bias)
         self.low_dim_list = [self.net.backbone.out_dim, self.low_dim, self.low_dim2, self.low_dim3, self.low_dim4]
 
+        #############################################################
+        self.net = nn.DataParallel(self.net)
+        self.net = self.net.cuda()
         self._load_model(self.net)
+
+        cudnn.benchmark = True
+        #############################################################
 
         self.produce_class11 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim, ratio=self.ratio1)
         self.produce_class21 = ProduceClass(n_sample=self.train_num, low_dim=self.low_dim2, ratio=self.ratio2)
@@ -242,7 +250,7 @@ class HCRunner(object):
         if self.pre_train:
             Tools.print('==> Pre train from checkpoint {} ..'.format(self.pre_train))
             checkpoint = torch.load(self.pre_train)
-            net.load_state_dict(checkpoint['net'], strict=False)
+            net.load_state_dict(checkpoint['net'], strict=True)
             self.best_acc = checkpoint['acc']
             best_epoch = checkpoint['epoch']
             Tools.print("{} {}".format(self.best_acc, best_epoch))
@@ -262,7 +270,8 @@ class HCRunner(object):
     def test(self, epoch=0, t=0.1, loader_n=1, k=50):
         all_top1_list, all_top5_list = KNN.knn(
             epoch, self.net, [self.low_dim_list[0]], self.train_loader_for_test,
-            self.test_loader, k, t, loader_n=loader_n, temp_size=self.temp_size, return_all_acc=True)
+            self.test_loader, k, t, loader_n=loader_n, temp_size=self.temp_size,
+            return_all_acc=True, temp_num_workers=self.worker)
         return all_top1_list, all_top5_list
 
     def _train_one_epoch(self, epoch, test_freq=2):
@@ -368,7 +377,7 @@ class HCRunner(object):
                 self.best_acc = all_top5_list[0][0]
                 pass
 
-            state = {'net': self.net.module.state_dict(), 'acc': all_top5_list[0][0], 'epoch': epoch}
+            state = {'net': self.net.state_dict(), 'acc': all_top5_list[0][0], 'epoch': epoch}
             new_path = os.path.split(self.checkpoint_path)
             torch.save(state, os.path.join(new_path[0], "{}_{}_{}_{}".format(
                 epoch, all_top1_list[0][0], all_top5_list[0][0], new_path[1])))
@@ -395,11 +404,22 @@ class HCRunner(object):
                 self.produce_class31.cal_label(feature_dict[FeatureName.L2norm3], indexes)
                 self.produce_class41.cal_label(feature_dict[FeatureName.L2norm4], indexes)
                 pass
-            Tools.print("Epoch: [{}] 1-{}/{} 2-{}/{} 3-{}/{} 4-{}/{}".format(
-                start_epoch, self.produce_class11.count, self.produce_class11.count_2,
-                self.produce_class21.count, self.produce_class21.count_2,
-                self.produce_class31.count, self.produce_class31.count_2,
-                self.produce_class41.count, self.produce_class41.count_2))
+            classes = self.produce_class12.classes
+            self.produce_class12.classes = self.produce_class11.classes
+            self.produce_class11.classes = classes
+            classes = self.produce_class22.classes
+            self.produce_class22.classes = self.produce_class21.classes
+            self.produce_class21.classes = classes
+            classes = self.produce_class32.classes
+            self.produce_class32.classes = self.produce_class31.classes
+            self.produce_class31.classes = classes
+            classes = self.produce_class42.classes
+            self.produce_class42.classes = self.produce_class41.classes
+            self.produce_class41.classes = classes
+            Tools.print("Train: [{}] 1-{}/{}".format(start_epoch, self.produce_class11.count, self.produce_class11.count_2))
+            Tools.print("Train: [{}] 2-{}/{}".format(start_epoch, self.produce_class21.count, self.produce_class21.count_2))
+            Tools.print("Train: [{}] 3-{}/{}".format(start_epoch, self.produce_class31.count, self.produce_class31.count_2))
+            Tools.print("Train: [{}] 4-{}/{}".format(start_epoch, self.produce_class41.count, self.produce_class41.count_2))
             pass
 
         for epoch in range(start_epoch, self.max_epoch):
@@ -413,7 +433,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3"
 
     """
     2020-05-30 01:17:31 Epoch: [68] lr=0.0002477738420031906 lambda=0.0
@@ -429,7 +449,7 @@ if __name__ == '__main__':
     2020-05-30 02:51:44 Epoch: [68] best accuracy: 29.76
     """
 
-    _start_epoch = 0
+    _start_epoch = 1
     _max_epoch = 500
     _learning_rate = 0.01
     _first_epoch, _t_epoch = 100, 50
@@ -440,16 +460,16 @@ if __name__ == '__main__':
     _is_adjust_lambda = False
     _test_sample_num = 100
 
-    _batch_size = 256 * 4
+    _batch_size = 256 * 2
 
     # _data_root_path = '/mnt/4T/Data/ILSVRC17/ILSVRC2015_CLS-LOC/ILSVRC2015/Data/CLS-LOC'
-    _data_root_path = '/mnt/4T/Data/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
-    # _data_root_path = '/media/test/ALISURE/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
+    # _data_root_path = '/mnt/4T/Data/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
+    _data_root_path = '/media/ubuntu/ALISURE-SSD/data/ImageNet/ILSVRC2015/Data/CLS-LOC'
     _test_split = "val"
-    _test_temp_size = 128 * 8
+    _test_temp_size = 128 * 1
     _is_loss_sum = True
     _has_l1 = True
-    _worker = 28
+    _worker = 40
     _linear_bias = False
     _resume = False
     _pre_train = "./checkpoint/imagenet/res18_class_4level_4096_3072_2048_1024_no_160_64_1_l1_sum_0_4321/74_0.088_28.838_ckpt.t7"
@@ -475,8 +495,8 @@ if __name__ == '__main__':
                       checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split,
                       temp_size=_test_temp_size, worker=_worker)
     Tools.print()
-    # acc = runner.test()
-    # Tools.print('Random accuracy: {}'.format(acc))
+    acc = runner.test()
+    Tools.print('Random accuracy: {}'.format(acc))
     runner.train(start_epoch=_start_epoch)
     Tools.print()
     acc = runner.test(loader_n=2)
