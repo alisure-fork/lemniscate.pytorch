@@ -175,7 +175,7 @@ class HCRunner(object):
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
         pass
 
-    def _adjust_learning_rate(self, epoch):
+    def _adjust_learning_rate2(self, epoch):
 
         def _get_lr(_base_lr, now_epoch, _t_epoch=self.t_epoch, _eta_min=1e-05):
             return _eta_min + (_base_lr - _eta_min) * (1 + math.cos(math.pi * now_epoch / _t_epoch)) / 2
@@ -212,6 +212,31 @@ class HCRunner(object):
             learning_rate = _get_lr(self.learning_rate / 64., epoch - first_epoch - t_epoch * 12)
         else:  # 1500-1600
             learning_rate = _get_lr(self.learning_rate / 64., epoch - first_epoch - t_epoch * 13)
+            pass
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = learning_rate
+            pass
+
+        return learning_rate
+
+    def _adjust_learning_rate(self, epoch):
+
+        def _get_lr(_base_lr, now_epoch, _t_epoch=self.t_epoch, _eta_min=1e-05):
+            return _eta_min + (_base_lr - _eta_min) * (1 + math.cos(math.pi * now_epoch / _t_epoch)) / 2
+
+        t_epoch = self.t_epoch
+        first_epoch = self.first_epoch
+        if epoch < first_epoch + self.t_epoch * 0:  # 0-100
+            learning_rate = self.learning_rate
+        elif epoch < first_epoch + t_epoch * 1:  # 100-200
+            learning_rate = self.learning_rate / 3
+        elif epoch < first_epoch + t_epoch * 2:  # 200-300
+            learning_rate = self.learning_rate / 10
+        elif epoch < first_epoch + t_epoch * 3:  # 300-400
+            learning_rate = _get_lr(self.learning_rate / 3.0, epoch - first_epoch - t_epoch * 2)
+        else:  # 400-500
+            learning_rate = _get_lr(self.learning_rate / 10.0, epoch - first_epoch - t_epoch * 3)
             pass
 
         for param_group in self.optimizer.param_groups:
@@ -274,7 +299,7 @@ class HCRunner(object):
             return_all_acc=True, temp_num_workers=self.worker)
         return all_top1_list, all_top5_list
 
-    def _train_one_epoch(self, epoch, test_freq=2):
+    def _train_one_epoch(self, epoch, test_freq=100):
         # Train
         try:
             self.net.train()
@@ -364,6 +389,11 @@ class HCRunner(object):
         finally:
             pass
 
+        Tools.print('Saving..')
+        state = {'net': self.net.state_dict(), 'acc': 0, 'epoch': epoch}
+        new_path = os.path.split(self.checkpoint_path)
+        torch.save(state, os.path.join(new_path[0], "{}_{}".format(epoch, new_path[1])))
+
         # Test
         if epoch % test_freq == 0:
             Tools.print("Test:  [{}] .......".format(epoch))
@@ -376,11 +406,6 @@ class HCRunner(object):
                 torch.save(state, self.checkpoint_path)
                 self.best_acc = all_top5_list[0][0]
                 pass
-
-            state = {'net': self.net.state_dict(), 'acc': all_top5_list[0][0], 'epoch': epoch}
-            new_path = os.path.split(self.checkpoint_path)
-            torch.save(state, os.path.join(new_path[0], "{}_{}_{}_{}".format(
-                epoch, all_top1_list[0][0], all_top5_list[0][0], new_path[1])))
 
             Tools.print('Epoch: [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc))
             pass
@@ -396,14 +421,15 @@ class HCRunner(object):
             self.produce_class21.reset()
             self.produce_class31.reset()
             self.produce_class41.reset()
-            for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
-                inputs, indexes = inputs.cuda(), indexes.cuda()
-                feature_dict = self.net(inputs)
-                self.produce_class11.cal_label(feature_dict[FeatureName.L2norm1], indexes)
-                self.produce_class21.cal_label(feature_dict[FeatureName.L2norm2], indexes)
-                self.produce_class31.cal_label(feature_dict[FeatureName.L2norm3], indexes)
-                self.produce_class41.cal_label(feature_dict[FeatureName.L2norm4], indexes)
-                pass
+            with torch.no_grad():
+                for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
+                    inputs, indexes = inputs.cuda(), indexes.cuda()
+                    feature_dict = self.net(inputs)
+                    self.produce_class11.cal_label(feature_dict[FeatureName.L2norm1], indexes)
+                    self.produce_class21.cal_label(feature_dict[FeatureName.L2norm2], indexes)
+                    self.produce_class31.cal_label(feature_dict[FeatureName.L2norm3], indexes)
+                    self.produce_class41.cal_label(feature_dict[FeatureName.L2norm4], indexes)
+                    pass
             classes = self.produce_class12.classes
             self.produce_class12.classes = self.produce_class11.classes
             self.produce_class11.classes = classes
@@ -501,8 +527,8 @@ if __name__ == '__main__':
                       checkpoint_path=_checkpoint_path, data_root=_data_root_path, test_split=_test_split,
                       temp_size=_test_temp_size, worker=_worker)
     Tools.print()
-    acc = runner.test()
-    Tools.print('Random accuracy: {}'.format(acc))
+    # acc = runner.test()
+    # Tools.print('Random accuracy: {}'.format(acc))
     runner.train(start_epoch=_start_epoch)
     Tools.print()
     acc = runner.test(loader_n=2)

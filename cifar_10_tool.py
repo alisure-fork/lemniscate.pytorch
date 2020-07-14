@@ -240,7 +240,7 @@ class CIFAR10Instance(datasets.CIFAR10):
         return img, target, index
 
     @staticmethod
-    def data(data_root, batch_size=128, is_train_shuffle=True):
+    def data(data_root, batch_size=128, is_train_shuffle=True, num_workers=2):
         Tools.print('==> Preparing data..')
 
         transform_train = transforms.Compose([
@@ -260,8 +260,8 @@ class CIFAR10Instance(datasets.CIFAR10):
         train_set = CIFAR10Instance(root=data_root, train=True, download=True, transform=transform_train)
         test_set = CIFAR10Instance(root=data_root, train=False, download=True, transform=transform_test)
         train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size,
-                                                   shuffle=is_train_shuffle, num_workers=2)
-        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
+                                                   shuffle=is_train_shuffle, num_workers=num_workers)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
         class_name = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         return train_set, train_loader, test_set, test_loader, class_name
