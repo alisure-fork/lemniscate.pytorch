@@ -1,3 +1,4 @@
+import cv2
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -115,6 +116,84 @@ class ImageNetInstance(datasets.ImageFolder):
         # test_set.imgs = test_set.imgs[0: 1000]
         # test_set.samples = test_set.imgs
         # test_set.targets = test_set.targets[0: 1000]
+
+        # 2
+        train_set_for_test = ImageNetInstance(root=train_root, transform=transform_test)
+        counter = Counter(train_set_for_test.targets)
+        cumsum = [0] + list(np.cumsum(list(counter.values())))
+        choice_list = []
+        for i in range(len(cumsum) - 1):
+            choice_list.extend(list(np.random.choice(range(cumsum[i], cumsum[i + 1]), sample_num, replace=False)))
+            pass
+        train_set_for_test.imgs = np.asarray(train_set_for_test.imgs)[choice_list].tolist()
+        train_set_for_test.samples = train_set_for_test.imgs
+        train_set_for_test.targets = np.asarray(train_set_for_test.targets)[choice_list].tolist()
+
+        # 3
+        train_loader = torch.utils.data.DataLoader(train_set, batch_size, shuffle=is_train_shuffle, num_workers=worker)
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=worker)
+        train_loader_for_test = torch.utils.data.DataLoader(train_set_for_test, batch_size=batch_size,
+                                                            shuffle=False, num_workers=worker)
+
+        return train_set, train_loader, test_set, test_loader, train_set_for_test, train_loader_for_test
+
+    pass
+
+
+class ImageNetInstanceRAM(datasets.ImageFolder):
+
+    def __init__(self, root, transform=None, target_transform=None, load_in_ram=True):
+        super().__init__(root, transform=transform, target_transform=target_transform)
+
+        self.load_in_ram = load_in_ram
+        self.imgs_data = self.load_imgs_data() if self.load_in_ram else None
+        pass
+
+    def load_imgs_data2(self):
+        with open(self.imgs[0][0], "rb") as f:
+            img_data = np.fromstring(f.read(), dtype=np.uint8)
+        imgs_data = [img_data for _ in self.imgs]
+        return imgs_data
+
+    def load_imgs_data(self):
+        imgs_data = []
+        for img in tqdm(self.imgs, desc="Loading files in RAM"):
+            with open(img[0], "rb") as f:
+                imgs_data.append(np.fromstring(f.read(), dtype=np.uint8))
+            pass
+        return imgs_data
+
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        if not self.load_in_ram:
+            sample = self.loader(path)
+        else:
+            sample = cv2.cvtColor(cv2.imdecode(self.imgs_data[index], cv2.IMREAD_COLOR), cv2.COLOR_RGB2BGR)
+            sample = Image.fromarray(sample, mode="RGB")
+            pass
+
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+        return sample, target, index
+
+    @staticmethod
+    def data(train_root, test_root, batch_size=128, output_size=224, sample_num=100, is_train_shuffle=True, worker=16):
+        Tools.print('==> Preparing data..')
+
+        # 0
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transform_train = transforms.Compose([
+            transforms.RandomResizedCrop(size=output_size, scale=(0.2, 1.)),
+            transforms.ColorJitter(0.4, 0.4, 0.4, 0.4), transforms.RandomGrayscale(p=0.2),
+            transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize])
+        transform_test = transforms.Compose([
+            transforms.Resize(256), transforms.CenterCrop(output_size), transforms.ToTensor(), normalize])
+
+        # 1
+        train_set = ImageNetInstanceRAM(root=train_root, transform=transform_train)
+        test_set = ImageNetInstanceRAM(root=test_root, transform=transform_test)
 
         # 2
         train_set_for_test = ImageNetInstance(root=train_root, transform=transform_test)
