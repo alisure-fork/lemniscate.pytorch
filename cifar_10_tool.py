@@ -470,8 +470,8 @@ class KNN(object):
             batch_size = inputs.size(0)
             for _index in range(len(low_dim_list)):
                 feature_name = "{}{}".format(FeatureName.L2norm, _index)
-                out_memory_list[_index][:, batch_idx * batch_size:
-                                           batch_idx * batch_size + batch_size] = feature_dict[feature_name].data.t()
+                out_memory_list[_index][:, batch_idx*batch_size:
+                                           batch_idx*batch_size+batch_size] = feature_dict[feature_name].data.t()
                 pass
             pass
         train_loader.dataset.transform = transform_bak

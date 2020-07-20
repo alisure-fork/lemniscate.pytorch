@@ -95,13 +95,11 @@ class HCRunner(object):
         self.best_acc = 0
 
         self.train_set, self.train_loader, self.test_set, self.test_loader, self.class_name = CIFAR10Instance.data(
-            self.data_root, batch_size=self.batch_size, num_workers=16)
+            self.data_root, batch_size=self.batch_size, num_workers=num_workers)
         self.train_num = self.train_set.__len__()
 
-        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, linear_bias=linear_bias)
-        # self.net = torch.nn.DataParallel(self.net, device_ids=range(torch.cuda.device_count()))
-
         #############################################################
+        self.net = HCResNet(HCBasicBlock, [2, 2, 2, 2], self.low_dim, linear_bias=linear_bias)
         self.net = nn.DataParallel(self.net)
         self.net = self.net.cuda()
         self._load_model(self.net)
@@ -116,7 +114,26 @@ class HCRunner(object):
 
         self.criterion = HCLoss().cuda()  # define loss function
         self.optimizer = optim.SGD(self.net.parameters(), lr=self.learning_rate, momentum=0.9, weight_decay=5e-4)
+        # self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         pass
+
+    def _adjust_learning_rate2(self, epoch):
+
+        t_epoch = self.t_epoch
+        first_epoch = self.first_epoch
+        if epoch < first_epoch + self.t_epoch * 0:  # 0-500
+            learning_rate = self.learning_rate
+        elif epoch < first_epoch + t_epoch * 1:  # 500-1000
+            learning_rate = self.learning_rate / 10
+        else:  # 1000-1500
+            learning_rate = self.learning_rate / 100
+            pass
+
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = learning_rate
+            pass
+
+        return learning_rate
 
     def _adjust_learning_rate(self, epoch):
 
@@ -212,7 +229,7 @@ class HCRunner(object):
 
     def test(self, epoch=0, t=0.1, loader_n=1):
         _acc = KNN.knn(epoch, self.net, self.low_dim_list,
-                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n)
+                       self.train_loader, self.test_loader, 200, t, loader_n=loader_n, temp_size=100)
         return _acc
 
     def _train_one_epoch(self, epoch, eval_epoch=10):
@@ -274,6 +291,78 @@ class HCRunner(object):
 
         pass
 
+    def _train_one_epoch2(self, epoch, update_epoch=3, eval_epoch=10):
+
+        # Update
+        try:
+            if epoch % update_epoch == 0:
+                self.net.eval()
+                Tools.print("Update label {} .......".format(epoch))
+                self.produce_class1.reset()
+                with torch.no_grad():
+                    for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
+                        inputs, indexes = inputs.cuda(), indexes.cuda()
+                        feature_dict = self.net(inputs)
+                        self.produce_class1.cal_label(feature_dict[FeatureName.L2norm1], indexes)
+                        pass
+                    pass
+                Tools.print("Epoch: [{}] 1-{}/{}".format(
+                    epoch, self.produce_class1.count, self.produce_class1.count_2))
+                pass
+        finally:
+            pass
+
+        # Train
+        try:
+            self.net.train()
+            _learning_rate_ = self._adjust_learning_rate(epoch)
+            _l1_lambda_ = self._adjust_l1_lambda(epoch)
+            Tools.print('Epoch: {} lr={} lambda={}'.format(epoch, _learning_rate_, _l1_lambda_))
+
+            avg_loss_1, avg_loss_1_1, avg_loss_1_2 = AverageMeter(), AverageMeter(), AverageMeter()
+
+            for batch_idx, (inputs, _, indexes) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
+                inputs, indexes = inputs.cuda(), indexes.cuda()
+                self.optimizer.zero_grad()
+
+                feature_dict = self.net(inputs)
+
+                targets = self.produce_class1.get_label(indexes)
+                params = [_ for _ in self.net.module.parameters()]
+                loss_1, loss_1_1, loss_1_2 = self.criterion(
+                    feature_dict[FeatureName.Logits1], targets, params[-1], _l1_lambda_)
+
+                avg_loss_1.update(loss_1.item(), inputs.size(0))
+                avg_loss_1_1.update(loss_1_1.item(), inputs.size(0))
+                avg_loss_1_2.update(loss_1_2.item(), inputs.size(0))
+
+                loss = loss_1 if self.has_l1 else loss_1_1
+                loss.backward()
+
+                self.optimizer.step()
+                pass
+
+            Tools.print(
+                'Epoch: {}/{} Loss 1: {:.4f}({:.4f}/{:.4f})'.format(
+                    epoch, len(self.train_loader), avg_loss_1.avg, avg_loss_1_1.avg, avg_loss_1_2.avg))
+        finally:
+            pass
+
+        # Test
+        if epoch % eval_epoch == 0:
+            Tools.print("Test [{}] .......".format(epoch))
+            _acc = self.test(epoch=epoch)
+            if _acc > self.best_acc:
+                Tools.print('Saving..')
+                state = {'net': self.net.state_dict(), 'acc': _acc, 'epoch': epoch}
+                torch.save(state, self.checkpoint_path)
+                self.best_acc = _acc
+                pass
+            Tools.print('Epoch: [{}] best accuracy: {:.2f}'.format(epoch, self.best_acc))
+            pass
+
+        pass
+
     def train(self, start_epoch):
         if start_epoch >= 0:
             self.net.eval()
@@ -293,7 +382,8 @@ class HCRunner(object):
 
         for epoch in range(start_epoch, self.max_epoch + 1):
             Tools.print()
-            self._train_one_epoch(epoch)
+            # self._train_one_epoch(epoch, eval_epoch=10)
+            self._train_one_epoch2(epoch, update_epoch=1)
             pass
         pass
 
@@ -309,30 +399,140 @@ class HCRunner(object):
 2020-05-23 11:32:53 Test:  [1286] 1 Top1=84.41 Top5=99.37
 2020-05-23 11:32:53 Saving..
 2020-05-23 11:32:53 Test:  [1286] best accuracy: 84.41
+
+
+2020-07-14 13:46:33 name=1level_128_1600_no_1024_1_l1_sum_0_1
+2020-07-14 13:46:33 low_dim=128 ratio=1
+2020-07-14 13:46:33 learning_rate=0.01 batch_size=1024
+2020-07-14 13:46:33 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+2020-07-14 13:46:33 pre_train=None checkpoint_path=./checkpoint/cifar10/1level_128_1600_no_1024_1_l1_sum_0_1/ckpt.t7
+2020-07-14 19:53:51 Epoch: [1600] lr=1e-05 lambda=0.0
+2020-07-14 19:54:35 Test:  [0] 0 Top1=73.67 Top5=98.25
+2020-07-14 19:54:35 Test:  [0] 1 Top1=71.66 Top5=98.03
+2020-07-14 19:54:42 Test:  [0] 0 Top1=71.17 Top5=98.44
+2020-07-14 19:54:42 Test:  [0] 1 Top1=69.35 Top5=98.23
+2020-07-14 19:54:42 final accuracy: 71.66
+
+
+2020-07-15 09:39:41 name=1level_128_1500_no_3072_1_l1_sum_0_1
+2020-07-15 09:39:41 low_dim=128 ratio=1
+2020-07-15 09:39:41 learning_rate=0.01 batch_size=3072
+2020-07-15 09:39:41 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+2020-07-15 09:39:41 pre_train=None checkpoint_path=./checkpoint/cifar10/1level_128_1500_no_3072_1_l1_sum_0_1/ckpt.t7
+2020-07-15 15:25:49 Train: [1500] 1-9973/2249
+2020-07-15 15:26:21 Test:  [0] 0 Top1=77.72 Top5=98.65
+2020-07-15 15:26:21 Test:  [0] 1 Top1=76.29 Top5=98.49
+2020-07-15 15:26:28 Test:  [0] 0 Top1=79.63 Top5=99.37
+2020-07-15 15:26:28 Test:  [0] 1 Top1=74.51 Top5=98.54
+2020-07-15 15:26:28 final accuracy: 76.29
+2020-07-16 21:46:13 final accuracy: 91.85/82.53
+
+
+2020-07-15 15:34:06 name=1level_128_1500_no_64_1_l1_sum_0_1
+2020-07-15 15:34:06 low_dim=128 ratio=1
+2020-07-15 15:34:06 learning_rate=0.01 batch_size=64
+2020-07-15 15:34:06 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+2020-07-15 15:34:06 pre_train=None checkpoint_path=./checkpoint/cifar10/1level_128_1500_no_64_1_l1_sum_0_1/ckpt.t7
+2020-07-16 16:47:39 Epoch: [1500] lr=0.0001 lambda=0.0
+2020-07-16 16:48:38 Train: [1500] 1-16339/2872
+2020-07-16 16:48:38 Train: [1500] 782 Loss 1: 1.1789(1.1789/22.9961)
+2020-07-16 16:48:38 Test:  [1500] .......
+2020-07-16 16:49:02 Test:  [1500] 0 Top1=84.23 Top5=99.36
+2020-07-16 16:49:02 Test:  [1500] 1 Top1=83.49 Top5=99.24
+2020-07-16 16:49:02 Test:  [1500] best accuracy: 83.69
+2020-07-16 16:49:26 Test:  [0] 0 Top1=84.23 Top5=99.36
+2020-07-16 16:49:26 Test:  [0] 1 Top1=83.49 Top5=99.24
+2020-07-16 16:49:56 Test:  [0] 0 Top1=82.35 Top5=99.38
+2020-07-16 16:49:56 Test:  [0] 1 Top1=81.50 Top5=99.31
+2020-07-16 16:49:56 final accuracy: 83.49
+
+
+2020-07-15 15:32:23 name=1level_128_1500_no_64_1_l1_sum_0_1
+2020-07-15 15:32:23 low_dim=128 ratio=1
+2020-07-15 15:32:23 learning_rate=0.01 batch_size=64
+2020-07-15 15:32:23 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+2020-07-15 15:32:23 pre_train=None checkpoint_path=./checkpoint/cifar10/1level_128_1500_no_64_1_l1_sum_0_1/ckpt.t7
+2020-07-16 17:22:47 Epoch: [1500] lr=0.0001 lambda=0.0
+2020-07-16 17:23:42 Train: [1500] 1-21080/2645
+2020-07-16 17:23:42 Train: [1500] 782 Loss 1: 1.4593(1.4593/311.0285)
+2020-07-16 17:23:42 Test:  [1500] .......
+2020-07-16 17:24:06 Test:  [1500] 0 Top1=75.47 Top5=98.38
+2020-07-16 17:24:06 Test:  [1500] 1 Top1=75.35 Top5=98.38
+2020-07-16 17:24:06 Test:  [1500] best accuracy: 75.54
+2020-07-16 17:24:29 Test:  [0] 0 Top1=75.47 Top5=98.38
+2020-07-16 17:24:29 Test:  [0] 1 Top1=75.35 Top5=98.38
+2020-07-16 17:24:57 Test:  [0] 0 Top1=73.00 Top5=98.07
+2020-07-16 17:24:57 Test:  [0] 1 Top1=72.74 Top5=97.99
+2020-07-16 17:24:57 final accuracy: 75.35
+2020-07-16 21:49:34 final accuracy: 75.68/76.96
+
+
+2020-07-16 22:33:19 name=1level_128_1600_no_256_1_l1_sum_0_1
+2020-07-16 22:33:19 low_dim=128 ratio=1
+2020-07-16 22:33:19 learning_rate=0.01 batch_size=256
+2020-07-16 22:33:19 has_l1=True l1_lambda=0.0 is_adjust_lambda=False
+2020-07-16 22:33:19 pre_train=None checkpoint_path=./checkpoint/cifar10/1level_128_1600_no_256_1_l1_sum_0_1/ckpt.t7
+2020-07-17 06:32:06 Test:  [0] 0 Top1=81.37 Top5=99.20
+2020-07-17 06:32:06 Test:  [0] 1 Top1=79.93 Top5=99.03
+2020-07-17 06:32:15 Test:  [0] 0 Top1=79.27 Top5=99.35
+2020-07-17 06:32:15 Test:  [0] 1 Top1=78.61 Top5=99.28
+2020-07-17 06:32:15 final accuracy: 79.93
+
+2020-07-18 15:41:37 Update label 1600 .......
+2020-07-18 15:41:53 Epoch: [1600] 1-11665/2005
+2020-07-18 15:41:53 Epoch: 1600 lr=1e-05 lambda=0.0
+2020-07-18 15:42:33 Epoch: 1600/1563 Loss 1: 0.9300(0.9300/21.6776)
+2020-07-18 15:42:33 Test [1600] .......
+2020-07-18 15:42:44 Test:  [1600] 0 Top1=85.38 Top5=99.35
+2020-07-18 15:42:44 Test:  [1600] 1 Top1=85.22 Top5=99.39
+2020-07-18 15:42:44 Epoch: [1600] best accuracy: 8542.00
+2020-07-18 15:42:55 Test:  [0] 0 Top1=85.38 Top5=99.35
+2020-07-18 15:42:55 Test:  [0] 1 Top1=85.22 Top5=99.39
+2020-07-18 15:43:13 Test:  [0] 0 Top1=83.76 Top5=99.58
+2020-07-18 15:43:13 Test:  [0] 1 Top1=83.64 Top5=99.59
+2020-07-18 15:43:13 final accuracy: 85.22
+
+2020-07-18 05:02:03 Epoch: [1600] lr=1e-05 lambda=0.0
+2020-07-18 05:02:45 Train: [1600] 1-15119/3112
+2020-07-18 05:02:45 Train: [1600] 1563 Loss 1: 1.0668(1.0668/21.9402)
+2020-07-18 05:02:45 Test:  [1600] .......
+2020-07-18 05:02:57 Test:  [1600] 0 Top1=84.56 Top5=99.41
+2020-07-18 05:02:57 Test:  [1600] 1 Top1=83.81 Top5=99.33
+2020-07-18 05:02:57 Test:  [1600] best accuracy: 84.08
+2020-07-18 05:03:08 Test:  [0] 0 Top1=84.56 Top5=99.41
+2020-07-18 05:03:08 Test:  [0] 1 Top1=83.81 Top5=99.33
+2020-07-18 05:03:25 Test:  [0] 0 Top1=82.65 Top5=99.46
+2020-07-18 05:03:25 Test:  [0] 1 Top1=82.25 Top5=99.41
+2020-07-18 05:03:25 final accuracy: 83.81
 """
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1, 2, 3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _start_epoch = 0
     _max_epoch = 1600
     _learning_rate = 0.01
+    # _first_epoch, _t_epoch = 1300, 100
+    # _first_epoch, _t_epoch = 500, 500
     _first_epoch, _t_epoch = 200, 100
     _low_dim = 128
     _ratio = 1
     _l1_lambda = 0.0
     _is_adjust_lambda = False
 
-    _batch_size = 32 * 3 * 8 * 4
+    # _batch_size = 32 * 3 * 8 * 4
+    _batch_size = 64 * 1
+    # _batch_size = 32 * 1
+    # _batch_size = 12 * 1
     _has_l1 = True
     _linear_bias = False
     _data_root = "/mnt/4T/Data/data/CIFAR"
     _resume = False
     _pre_train = None
     # _pre_train = "./checkpoint/11_class_128_1level_1600_no_32_1_l1_sum_0_1/ckpt.t7"
-    _name = "1level_{}_{}_no_{}_{}_l1_sum_{}_{}".format(_low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1,
-                                                        1 if _is_adjust_lambda else 0, _ratio)
+    _name = "1level_{}_{}_no_{}_{}_l1_sum_{}_{}2".format(_low_dim, _max_epoch, _batch_size, 0 if _linear_bias else 1,
+                                                         1 if _is_adjust_lambda else 0, _ratio)
     _checkpoint_path = "./checkpoint/cifar10/{}/ckpt.t7".format(_name)
 
     Tools.print()
