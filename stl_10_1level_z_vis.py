@@ -166,15 +166,16 @@ class HCRunner(object):
         for batch_idx, (images, inputs, labels, indexes) in tqdm(enumerate(loader)):
             inputs, indexes = inputs.cuda(), indexes.cuda()
             feature_dict = self.net(inputs)
-            ic_out_logits = feature_dict["Logits1"]
+            # ic_out_logits = feature_dict[FeatureName.Logits1]
+            ic_out_logits = feature_dict[FeatureName.L2norm1]
 
             image_data = np.asarray(images.permute(0, 2, 3, 1) * 255, np.uint8)
             cluster_id = np.asarray(torch.argmax(ic_out_logits, -1).cpu())
             for i in range(len(indexes)):
                 result_path = Tools.new_dir(os.path.join(vis_dir, split, str(cluster_id[i])))
-                Image.fromarray(image_data[i]).save(os.path.join(result_path, "{}_{}.png".format(labels[i], indexes[i])))
+                score = 100 + int(100 * ic_out_logits[i][cluster_id[i]])  # labels[i]
+                Image.fromarray(image_data[i]).save(os.path.join(result_path, "{}_{}.png".format(score, indexes[i])))
                 pass
-            pass
             pass
         pass
 
@@ -182,7 +183,7 @@ class HCRunner(object):
 
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     _input_size = 96
     _conv1_stride = 1  # 1
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     _batch_size = 32
     _linear_bias = False
     _checkpoint_path = "./checkpoint/stl10/stl_10_class_128_1level_1600_no_32_1_l1_sum_0_1_96_1/ckpt.t7"
-    _vis_dir = "/mnt/4T/ALISURE/Unsupervised/vis/stl10"
+    _vis_dir = "/mnt/4T/ALISURE/Unsupervised/vis/stl10_3"
 
     Tools.print()
     runner = HCRunner(low_dim=_low_dim, linear_bias=_linear_bias,  input_size=_input_size,
