@@ -7,16 +7,19 @@ from collections import Counter
 class Config(object):
     vis_root = "/mnt/4T/ALISURE/Unsupervised/vis/stl10_3"
 
-    split = "unlabeled"
+    # split = "unlabeled"
     # split = "train"
-    # split = "test"
+    split = "test"
 
-    ic_id_list = [4, 5, 29, 8, 41, 12, 45, 46, 64, 65]
+    # ic_id_list = [4, 5, 29, 8, 41, 12, 45, 46, 64, 65]
+    # ic_id_list = list(range(0, 128))
+    ic_id_list = [43, 3, 10, 32, 36,
+                  42, 45, 16, 5, 1, 9]
     image_size = 84
 
-    image_num_unlabeled = 18
-    image_num_train = 18
-    image_num_test = 18
+    image_num_unlabeled = 20
+    image_num_train = image_num_unlabeled
+    image_num_test = image_num_unlabeled
 
     margin_image = 4
     margin_split = 32
